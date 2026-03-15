@@ -18,7 +18,6 @@ public class UnrealClientProtocol : ModuleRules
 			"Networking",
 			"Json",
 			"JsonUtilities",
-			"AssetRegistry"
 		});
 
         if (Target.bBuildEditor)

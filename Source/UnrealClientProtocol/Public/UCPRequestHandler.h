@@ -34,13 +34,6 @@ private:
 	TSharedPtr<FJsonObject> DispatchSingle(const TSharedPtr<FJsonObject>& Request);
 	TSharedPtr<FJsonObject> ExecBatch(const TSharedPtr<FJsonObject>& Request);
 	TSharedPtr<FJsonObject> CallUFunction(const TSharedPtr<FJsonObject>& Request);
-	TSharedPtr<FJsonObject> GetUProperty(const TSharedPtr<FJsonObject>& Request);
-	TSharedPtr<FJsonObject> SetUProperty(const TSharedPtr<FJsonObject>& Request);
-	TSharedPtr<FJsonObject> Describe(const TSharedPtr<FJsonObject>& Request);
-	TSharedPtr<FJsonObject> FindUObjects(const TSharedPtr<FJsonObject>& Request);
-	TSharedPtr<FJsonObject> GetDerivedClasses(const TSharedPtr<FJsonObject>& Request);
-	TSharedPtr<FJsonObject> GetDependencies(const TSharedPtr<FJsonObject>& Request);
-	TSharedPtr<FJsonObject> GetReferencers(const TSharedPtr<FJsonObject>& Request);
 
 	void CopyIdField(const TSharedPtr<FJsonObject>& From, const TSharedPtr<FJsonObject>& To);
 

@@ -156,7 +156,7 @@ TSharedPtr<FJsonObject> FUCPFunctionInvoker::DescribeProperty(
 		return MakeErrorResponse(FString(), Error);
 	}
 
-	FProperty* Prop = Obj->GetClass()->FindPropertyByName(FName(*PropertyName));
+	FProperty* Prop = FUCPParamConverter::FindPropertyByNameFlexible(Obj->GetClass(), PropertyName);
 	if (!Prop)
 	{
 		return MakeErrorResponse(FString(),
