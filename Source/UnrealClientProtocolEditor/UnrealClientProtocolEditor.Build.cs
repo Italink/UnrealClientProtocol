@@ -27,6 +27,7 @@ public class UnrealClientProtocolEditor : ModuleRules
 			"MaterialEditor",
 			"Json",
 			"JsonUtilities",
+			"AssetRegistry",
 		});
 	}
 }
