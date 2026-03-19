@@ -100,6 +100,34 @@ TSharedPtr<FJsonObject> FUCPFunctionInvoker::DescribeObject(const FString& Objec
 	Result->SetStringField(TEXT("class"), Class->GetPathName());
 	Result->SetStringField(TEXT("object"), Obj->GetPathName());
 
+	TArray<TSharedPtr<FJsonValue>> SuperChain;
+	for (UClass* Super = Class->GetSuperClass(); Super; Super = Super->GetSuperClass())
+	{
+		SuperChain.Add(MakeShared<FJsonValueString>(Super->GetPathName()));
+	}
+	Result->SetArrayField(TEXT("superClasses"), SuperChain);
+
+	TArray<TSharedPtr<FJsonValue>> ObjFlags;
+	struct FlagEntry { EObjectFlags Flag; const TCHAR* Name; };
+	static const FlagEntry FlagTable[] = {
+		{ RF_Public,             TEXT("Public") },
+		{ RF_Standalone,         TEXT("Standalone") },
+		{ RF_Transactional,      TEXT("Transactional") },
+		{ RF_ClassDefaultObject, TEXT("ClassDefaultObject") },
+		{ RF_ArchetypeObject,    TEXT("ArchetypeObject") },
+		{ RF_Transient,          TEXT("Transient") },
+		{ RF_DefaultSubObject,   TEXT("DefaultSubObject") },
+		{ RF_WasLoaded,          TEXT("WasLoaded") },
+	};
+	for (const FlagEntry& Entry : FlagTable)
+	{
+		if (Obj->HasAnyFlags(Entry.Flag))
+		{
+			ObjFlags.Add(MakeShared<FJsonValueString>(Entry.Name));
+		}
+	}
+	Result->SetArrayField(TEXT("flags"), ObjFlags);
+
 	TArray<TSharedPtr<FJsonValue>> PropArray;
 	for (TFieldIterator<FProperty> It(Class, EFieldIteratorFlags::IncludeSuper); It; ++It)
 	{
@@ -168,8 +196,33 @@ TSharedPtr<FJsonObject> FUCPFunctionInvoker::DescribeProperty(
 	Result->SetStringField(TEXT("type"), GetPropertyTypeString(Prop));
 	Result->SetStringField(TEXT("class"), Obj->GetClass()->GetPathName());
 	Result->SetBoolField(TEXT("readOnly"), Prop->HasAnyPropertyFlags(CPF_BlueprintReadOnly) || !Prop->HasAnyPropertyFlags(CPF_Edit));
-	Result->SetBoolField(TEXT("blueprintVisible"), Prop->HasAnyPropertyFlags(CPF_BlueprintVisible));
-	Result->SetBoolField(TEXT("editAnywhere"), Prop->HasAnyPropertyFlags(CPF_Edit));
+
+	TArray<TSharedPtr<FJsonValue>> PropFlags;
+	struct PropFlagEntry { uint64 Flag; const TCHAR* Name; };
+	static const PropFlagEntry PropFlagTable[] = {
+		{ CPF_Edit,                TEXT("Edit") },
+		{ CPF_BlueprintVisible,    TEXT("BlueprintVisible") },
+		{ CPF_BlueprintReadOnly,   TEXT("BlueprintReadOnly") },
+		{ CPF_EditConst,           TEXT("EditConst") },
+		{ CPF_DisableEditOnInstance,TEXT("DisableEditOnInstance") },
+		{ CPF_DisableEditOnTemplate,TEXT("DisableEditOnTemplate") },
+		{ CPF_Transient,           TEXT("Transient") },
+		{ CPF_Config,              TEXT("Config") },
+		{ CPF_GlobalConfig,        TEXT("GlobalConfig") },
+		{ CPF_SaveGame,            TEXT("SaveGame") },
+		{ CPF_ExposeOnSpawn,       TEXT("ExposeOnSpawn") },
+		{ CPF_Interp,              TEXT("Interp") },
+		{ CPF_Net,                 TEXT("Net") },
+		{ CPF_RepNotify,           TEXT("RepNotify") },
+	};
+	for (const PropFlagEntry& Entry : PropFlagTable)
+	{
+		if (Prop->HasAnyPropertyFlags(Entry.Flag))
+		{
+			PropFlags.Add(MakeShared<FJsonValueString>(Entry.Name));
+		}
+	}
+	Result->SetArrayField(TEXT("flags"), PropFlags);
 
 	if (FStructProperty* StructProp = CastField<FStructProperty>(Prop))
 	{
@@ -214,7 +267,33 @@ TSharedPtr<FJsonObject> FUCPFunctionInvoker::DescribeFunction(
 	TSharedPtr<FJsonObject> FuncDesc = MakeShared<FJsonObject>();
 	FuncDesc->SetStringField(TEXT("name"), Func->GetName());
 	FuncDesc->SetStringField(TEXT("class"), Obj->GetClass()->GetPathName());
-	FuncDesc->SetBoolField(TEXT("isStatic"), Func->HasAnyFunctionFlags(FUNC_Static));
+
+	TArray<TSharedPtr<FJsonValue>> FuncFlags;
+	struct FuncFlagEntry { EFunctionFlags Flag; const TCHAR* Name; };
+	static const FuncFlagEntry FuncFlagTable[] = {
+		{ FUNC_Static,            TEXT("Static") },
+		{ FUNC_BlueprintCallable, TEXT("BlueprintCallable") },
+		{ FUNC_BlueprintPure,     TEXT("BlueprintPure") },
+		{ FUNC_BlueprintEvent,    TEXT("BlueprintEvent") },
+		{ FUNC_BlueprintAuthorityOnly, TEXT("BlueprintAuthorityOnly") },
+		{ FUNC_Net,               TEXT("Net") },
+		{ FUNC_NetServer,         TEXT("NetServer") },
+		{ FUNC_NetClient,         TEXT("NetClient") },
+		{ FUNC_NetMulticast,      TEXT("NetMulticast") },
+		{ FUNC_Native,            TEXT("Native") },
+		{ FUNC_Event,             TEXT("Event") },
+		{ FUNC_Const,             TEXT("Const") },
+		{ FUNC_Exec,              TEXT("Exec") },
+		{ FUNC_HasDefaults,       TEXT("HasDefaults") },
+	};
+	for (const FuncFlagEntry& Entry : FuncFlagTable)
+	{
+		if (Func->HasAnyFunctionFlags(Entry.Flag))
+		{
+			FuncFlags.Add(MakeShared<FJsonValueString>(Entry.Name));
+		}
+	}
+	FuncDesc->SetArrayField(TEXT("flags"), FuncFlags);
 
 	TArray<TSharedPtr<FJsonValue>> ParamsArray;
 	for (TFieldIterator<FProperty> It(Func); It && It->HasAnyPropertyFlags(CPF_Parm); ++It)
