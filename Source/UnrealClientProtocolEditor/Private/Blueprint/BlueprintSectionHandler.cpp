@@ -209,7 +209,7 @@ TMap<FString, FString> FBlueprintSectionHandler::ReadVariables(UBlueprint* Bluep
 			VarObj->SetStringField(TEXT("DefaultValue"), Var.DefaultValue);
 		}
 
-		if (Var.Category != UEdGraphSchema_K2::VR_DefaultCategory)
+		if (!Var.Category.EqualTo(UEdGraphSchema_K2::VR_DefaultCategory))
 		{
 			VarObj->SetStringField(TEXT("Category"), Var.Category.ToString());
 		}
