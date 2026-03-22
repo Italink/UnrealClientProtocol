@@ -106,8 +106,6 @@ public:
 
 			TArray<FString> Names;
 			Working.ParseIntoArray(Names, TEXT(","));
-
-			CustomExpr->Inputs.Empty();
 			for (FString& Name : Names)
 			{
 				Name.TrimStartAndEndInline();
@@ -115,20 +113,41 @@ public:
 				{
 					Name = Name.Mid(1, Name.Len() - 2);
 				}
-				FCustomInput NewInput;
-				NewInput.InputName = FName(*Name);
-				CustomExpr->Inputs.Add(MoveTemp(NewInput));
 			}
 
-			if (CustomExpr->Inputs.Num() == 0)
+			bool bNamesMatch = (Names.Num() == CustomExpr->Inputs.Num());
+			if (bNamesMatch)
 			{
-				FCustomInput DefaultInput;
-				DefaultInput.InputName = NAME_None;
-				CustomExpr->Inputs.Add(MoveTemp(DefaultInput));
+				for (int32 i = 0; i < Names.Num(); ++i)
+				{
+					if (CustomExpr->Inputs[i].InputName != FName(*Names[i]))
+					{
+						bNamesMatch = false;
+						break;
+					}
+				}
 			}
 
-			CustomExpr->RebuildOutputs();
-			OutChanges.Add(FString::Printf(TEXT("InputNames: %d inputs"), CustomExpr->Inputs.Num()));
+			if (!bNamesMatch)
+			{
+				CustomExpr->Inputs.Empty();
+				for (FString& Name : Names)
+				{
+					FCustomInput NewInput;
+					NewInput.InputName = FName(*Name);
+					CustomExpr->Inputs.Add(MoveTemp(NewInput));
+				}
+
+				if (CustomExpr->Inputs.Num() == 0)
+				{
+					FCustomInput DefaultInput;
+					DefaultInput.InputName = NAME_None;
+					CustomExpr->Inputs.Add(MoveTemp(DefaultInput));
+				}
+
+				CustomExpr->RebuildOutputs();
+				OutChanges.Add(FString::Printf(TEXT("InputNames: %d inputs"), CustomExpr->Inputs.Num()));
+			}
 		}
 	}
 };
