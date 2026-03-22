@@ -169,6 +169,11 @@ FString FUCPParamConverter::JsonValueToProperty(
 
 	if (FObjectProperty* ObjProp = CastField<FObjectProperty>(Property))
 	{
+		if (JsonVal->IsNull())
+		{
+			ObjProp->SetObjectPropertyValue(ValuePtr, nullptr);
+			return FString();
+		}
 		FString ObjPath = JsonVal->AsString();
 		if (ObjPath.IsEmpty() || ObjPath == TEXT("null"))
 		{
@@ -187,6 +192,11 @@ FString FUCPParamConverter::JsonValueToProperty(
 
 	if (FWeakObjectProperty* WeakProp = CastField<FWeakObjectProperty>(Property))
 	{
+		if (JsonVal->IsNull())
+		{
+			WeakProp->SetObjectPropertyValue(ValuePtr, nullptr);
+			return FString();
+		}
 		FString ObjPath = JsonVal->AsString();
 		UObject* Obj = ObjPath.IsEmpty() ? nullptr : ResolveObjectPath(ObjPath, WeakProp->PropertyClass);
 		WeakProp->SetObjectPropertyValue(ValuePtr, Obj);
@@ -195,14 +205,24 @@ FString FUCPParamConverter::JsonValueToProperty(
 
 	if (CastField<FSoftObjectProperty>(Property))
 	{
-		FString PathStr = JsonVal->AsString();
 		FSoftObjectPtr& SoftPtr = *reinterpret_cast<FSoftObjectPtr*>(ValuePtr);
+		if (JsonVal->IsNull())
+		{
+			SoftPtr.Reset();
+			return FString();
+		}
+		FString PathStr = JsonVal->AsString();
 		SoftPtr = FSoftObjectPath(PathStr);
 		return FString();
 	}
 
 	if (FClassProperty* ClassProp = CastField<FClassProperty>(Property))
 	{
+		if (JsonVal->IsNull())
+		{
+			ClassProp->SetObjectPropertyValue(ValuePtr, nullptr);
+			return FString();
+		}
 		FString ClassPath = JsonVal->AsString();
 		UClass* LoadedClass = LoadClass<UObject>(nullptr, *ClassPath);
 		if (!LoadedClass)
