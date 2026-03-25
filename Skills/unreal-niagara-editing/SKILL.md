@@ -1,358 +1,217 @@
 ---
-name: unreal-material-editing
-description: Edit UE material node graphs and properties via text (ReadGraph/WriteGraph). Use when the user asks to add, remove, or rewire material expression nodes, or change material properties like ShadingModel or BlendMode.
+name: unreal-niagara-editing
+description: Edit Niagara systems, emitters, and scripts via UCP. Use when the user asks to create/modify particle effects, manage emitters, configure modules, set module inputs, edit Niagara script graphs, or any Niagara VFX operation.
 ---
 
-# Material Editing
+# Niagara Editing
 
-Material editing covers both **material properties** (ShadingModel, BlendMode, etc.) via the `[Properties]` section, and **node graph** (expression nodes and connections) via the `[Material]` section. Both use the same unified API.
+Niagara editing uses three complementary paths: **NiagaraOperationLibrary** for structural operations, **NodeCode** for graph/property reading and writing, and **ObjectOperationLibrary** for detailed UObject property access.
 
 **Prerequisite**: UE editor running with UCP plugin enabled.
 
-## API
+## API Overview
+
+### NiagaraOperationLibrary (structural operations)
+
+CDO: `/Script/UnrealClientProtocolEditor.Default__NiagaraOperationLibrary`
+
+UObject path parameters (System, Emitter, Script, etc.) are auto-resolved by UCP — pass the object path as a string and UCP converts it to the UObject pointer.
+
+| Function | Params | Description |
+|----------|--------|-------------|
+| `AddEmitter` | `System`(path), `SourceEmitter`(path), `Name` | Add emitter to system |
+| `RemoveEmitter` | `System`(path), `EmitterName` | Remove emitter from system |
+| `ReorderEmitter` | `System`(path), `EmitterName`, `NewIndex` | Reorder emitter |
+| `AddUserParameter` | `System`(path), `ParamName`, `TypeName`, `DefaultValue` | Add User parameter |
+| `RemoveUserParameter` | `System`(path), `ParamName` | Remove User parameter |
+| `AddModule` | `SystemOrEmitter`(path), `ScriptUsage`, `ModuleScript`(path), `Index` | Add module to stack |
+| `RemoveModule` | `SystemOrEmitter`(path), `ScriptUsage`, `ModuleNodeGuid` | Remove module |
+| `MoveModule` | `SystemOrEmitter`(path), `ScriptUsage`, `ModuleNodeGuid`, `NewIndex` | Reorder module |
+| `SetModuleEnabled` | `SystemOrEmitter`(path), `ScriptUsage`, `ModuleNodeGuid`, `bEnabled` | Enable/disable module |
+| `GetModules` | `SystemOrEmitter`(path), `ScriptUsage` | List modules with name/guid/enabled/scriptPath |
+| `SetModuleInputValue` | `SystemOrEmitter`(path), `ScriptUsage`, `ModuleNodeGuid`, `InputName`, `Value` | Set input to literal (Rapid Iteration) |
+| `SetModuleInputBinding` | `SystemOrEmitter`(path), `ScriptUsage`, `ModuleNodeGuid`, `InputName`, `LinkedParamName` | Bind input to parameter |
+| `SetModuleInputDynamicInput` | `SystemOrEmitter`(path), `ScriptUsage`, `ModuleNodeGuid`, `InputName`, `DynamicInputScript`(path) | Set dynamic input |
+| `ResetModuleInput` | `SystemOrEmitter`(path), `ScriptUsage`, `ModuleNodeGuid`, `InputName` | Reset to default |
+| `GetModuleInputs` | `SystemOrEmitter`(path), `ScriptUsage`, `ModuleNodeGuid` | List inputs with name/type/mode/value |
+| `AddRenderer` | `Emitter`(path), `RendererClassName` | Add renderer |
+| `RemoveRenderer` | `Emitter`(path), `RendererIndex` | Remove renderer |
+| `MoveRenderer` | `Emitter`(path), `RendererIndex`, `NewIndex` | Reorder renderer |
+| `AddEventHandler` | `Emitter`(path) | Add event handler |
+| `RemoveEventHandler` | `Emitter`(path), `UsageIdString` | Remove event handler |
+| `AddSimulationStage` | `Emitter`(path) | Add simulation stage |
+| `RemoveSimulationStage` | `Emitter`(path), `StageIdString` | Remove simulation stage |
+| `MoveSimulationStage` | `Emitter`(path), `StageIdString`, `NewIndex` | Reorder simulation stage |
+| `AddGraphParameter` | `Script`(path), `ParamName`, `TypeName` | Add parameter to script graph |
+| `RemoveGraphParameter` | `Script`(path), `ParamName` | Remove parameter |
+| `RenameGraphParameter` | `Script`(path), `OldName`, `NewName` | Rename parameter |
+| `CreateScratchPadScript` | `SystemOrEmitter`(path), `ScriptName`, `Usage`, `ModuleUsageBitmask` | Create a ScratchPad (Local Module) script |
+
+### NodeCode (graph + properties reading/writing)
 
 CDO: `/Script/UnrealClientProtocolEditor.Default__NodeCodeEditingLibrary`
 
 | Function | Params | Description |
 |----------|--------|-------------|
-| `Outline` | `AssetPath` | Returns available sections (Properties, Material, Composite:Name) |
-| `ReadGraph` | `AssetPath`, `Section` | Returns text. Empty Section = all. `"Material"` = main graph only. |
-| `WriteGraph` | `AssetPath`, `Section`, `GraphText` | Overwrite section. Auto-recompiles, relayouts, refreshes editor. |
-
-## Material Properties
-
-Use the `[Properties]` section to read/write material-level settings:
-
-```
-[Properties]
-ShadingModel: MSM_DefaultLit
-BlendMode: BLEND_Opaque
-TwoSided: true
-OpacityMaskClipValue: 0.333
-```
-
-Common properties:
-
-| Property | Example Values |
-|----------|---------------|
-| `ShadingModel` | `MSM_DefaultLit`, `MSM_Unlit`, `MSM_Subsurface`, `MSM_ClearCoat` |
-| `BlendMode` | `BLEND_Opaque`, `BLEND_Masked`, `BLEND_Translucent`, `BLEND_Additive` |
-| `MaterialDomain` | `MD_Surface`, `MD_DeferredDecal`, `MD_LightFunction`, `MD_PostProcess`, `MD_UI` |
-| `TwoSided` | `true`, `false` |
-
-Read with `ReadGraph(AssetPath, "Properties")`, write with `WriteGraph(AssetPath, "Properties", text)`.
+| `Outline` | `AssetPath` | List available sections |
+| `ReadGraph` | `AssetPath`, `Section` | Read section content as text |
+| `WriteGraph` | `AssetPath`, `Section`, `GraphText` | Write section content back |
 
 ## Section Model
 
-| Section | Description |
-|---------|-------------|
-| `[Properties]` | Material-level properties (ShadingModel, BlendMode, etc.) |
-| `[Material]` | Complete main graph — all non-composite nodes, read/write as one unit |
-| `[Composite:Name]` | Composite subgraph (physically isolated) |
+### System Asset (UNiagaraSystem)
 
-The `[Material]` section contains the **entire main graph**. Output pins are expressed as graph output connections: `> RGB -> [BaseColor]`.
+| Section | Type | Description |
+|---------|------|-------------|
+| `[SystemProperties]` | Properties | Warmup, bounds, determinism, scalability, LWC, render defaults |
+| `[Emitters]` | Properties | Emitter list with names, enabled state, ObjectPath |
+| `[UserParameters]` | Properties | User. namespace exposed parameters |
+| `[ScratchPadScripts]` | Properties | Local Module scripts with name, Usage, ModuleUsageBitmask, ObjectPath |
+| `[SystemSpawn]` | Graph | System spawn stage module chain |
+| `[SystemUpdate]` | Graph | System update stage module chain |
 
-## Text Format
+### Emitter Object (UNiagaraEmitter, accessed via ObjectPath from [Emitters])
 
-```
-[Material]
+| Section | Type | Description |
+|---------|------|-------------|
+| `[EmitterProperties]` | Properties | SimTarget, bLocalSpace, bounds, allocation, inheritance |
+| `[ParticleAttributes]` | Properties (read-only) | Compiled particle attributes list |
+| `[Renderers]` | Properties | Renderer list with class, ObjectPath |
+| `[EventHandlers]` | Properties | Event handler configs |
+| `[SimulationStages]` | Properties | Simulation stage list |
+| `[EmitterSpawn]` | Graph | Emitter spawn stage |
+| `[EmitterUpdate]` | Graph | Emitter update stage |
+| `[ParticleSpawn]` | Graph | Particle spawn stage |
+| `[ParticleUpdate]` | Graph | Particle update stage |
+| `[ParticleEvent:EventId]` | Graph | Event handler graph |
+| `[SimulationStage:StageId]` | Graph | Custom simulation stage graph |
 
-N_4kVm2xRp8bNw3yLq9dJs MaterialExpressionTextureSample {Texture:"/Game/Textures/T_Wood_BC"}
-  > RGB -> [BaseColor]
-  > A -> N_7tHn5cWs1fPx6zMr0gKu.A
+### Standalone Script (UNiagaraScript)
 
-N_9aEo3jXv2hQy8bFt4iLw MaterialExpressionScalarParameter {ParameterName:"Roughness", DefaultValue:0.5}
-  > -> N_7tHn5cWs1fPx6zMr0gKu.B
+| Section | Type | Description |
+|---------|------|-------------|
+| `[Module]` | Graph | Module script graph |
+| `[Function]` | Graph | Function script graph |
+| `[DynamicInput]` | Graph | Dynamic input script graph |
 
-N_2dGq6lZx4jSa0cHv8kNy MaterialExpressionVectorParameter {ParameterName:"EmissiveColor", DefaultValue:{"R":1,"G":0.5,"B":0}}
-  > -> N_5fIr7mBz3kTb1eJw9lOa.A
+## ScriptUsage Values
 
-N_7tHn5cWs1fPx6zMr0gKu MaterialExpressionMultiply
-  > -> [Roughness]
+Use these strings for `ScriptUsage` parameter:
 
-N_5fIr7mBz3kTb1eJw9lOa MaterialExpressionMultiply
-  > -> [EmissiveColor]
+`SystemSpawn`, `SystemUpdate`, `EmitterSpawn`, `EmitterUpdate`, `ParticleSpawn`, `ParticleUpdate`, `ParticleEvent`, `SimulationStage`, `Module`, `Function`, `DynamicInput`
 
-N_0hKt8nDc5lUd2gLx6mPb MaterialExpressionConstant {R:5.0}
-  > -> N_5fIr7mBz3kTb1eJw9lOa.B
+## Parameter Namespaces
 
-N_3jMv0pFe7nWf4iNz8oCd MaterialExpressionTextureSample {Texture:"/Game/Textures/T_Wood_N"}
-  > -> [Normal]
+| Namespace | Scope | Writable In |
+|-----------|-------|-------------|
+| `System.` | System-level attributes | System stages |
+| `Emitter.` | Emitter-level attributes | Emitter stages |
+| `Particles.` | Particle attributes | Particle stages |
+| `Module.` | Module input parameters | Module internal |
+| `User.` | User-exposed parameters | Runtime settable |
+| `Engine.` | Engine values (DeltaTime, etc.) | Read-only |
+| `Local.Module.` | Module-local temporaries | Module internal |
+| `Transient.` | Cross-module temporaries | Current stage |
+| `Constants.` | Rapid iteration parameters | Editor-set values |
 
-N_6lOx2rHg9pYh5kPb1qEf MaterialExpressionTime
-  > -> N_8nQz4tJi0rAj7mRd3sFg.A
+## Module Input Setting Methods
 
-N_8nQz4tJi0rAj7mRd3sFg MaterialExpressionSine {Period:6.283185}
-  > -> N_1pSb6vLk2tCl9oTf5uGh.B
+Modules can have their inputs set in four ways:
 
-N_1pSb6vLk2tCl9oTf5uGh MaterialExpressionMultiply
-  > -> [WorldPositionOffset]
-
-N_4rUd8xNm3vEn0qVh7wIj MaterialExpressionWorldPosition
-  > -> N_1pSb6vLk2tCl9oTf5uGh.A
-```
-
-Note how `Time` and `WorldPosition` — source-only nodes with no inputs — both have `> ->` lines. Without these lines they would be deleted as orphans.
-
-### Nodes
-
-- `N_<id>`: node reference ID. Two forms:
-  - **Existing nodes**: `N_<base62>` — a 22-character Base62-encoded GUID (e.g. `N_4kVm2xRp8bNw3yLq9dJs`). ReadGraph always outputs this form. **Preserve these IDs when writing back** — they are the node's stable identity.
-  - **New nodes**: `N_new<int>` — temporary ID for nodes you are creating (e.g. `N_new0`, `N_new1`). The system assigns a real GUID after WriteGraph.
-- `<ClassName>`: UMaterialExpression class name (e.g. `MaterialExpressionMultiply`, `MaterialExpressionConstant3Vector`)
-- `{...}`: non-default properties, single line
-
-### Connections
-
-**Connections are declared on the source (output) node only.** Each `>` line under a node declares where that node's output goes. There is no "reverse" declaration — if a node has no `>` lines, it has no outgoing connections.
-
-```
-  > OutputPin -> N_<target>.InputPin    # named output to named input
-  > OutputPin -> [GraphOutput]          # named output to material output
-  > -> N_<target>.InputPin              # single-output node to named input
-  > -> N_<target>                       # single-output to single-input (both omitted)
-```
-
-**CRITICAL — Orphan cleanup:** After WriteGraph, any node not reachable from the material output pins is **automatically deleted** as an orphan. This means:
-
-- **Every node must be part of a connected chain that reaches a `[GraphOutput]`.** If you create a node but forget to write its `> ->` output connections, it will be silently deleted.
-- **Source-only nodes** (nodes with no inputs, only outputs — e.g. `Time`, `ScreenPosition`, `ViewSize`, `TexCoord`, `WorldPosition`, `CameraPositionWS`, `VertexColor`, constants) are especially prone to this. They **must** have `> ->` lines connecting their output to downstream nodes.
-
-### Multi-Output Nodes
-
-Some nodes have multiple named outputs. Use the output name before `->`:
-
-| Node | Outputs |
-|------|---------|
-| `MaterialExpressionScreenPosition` | `ViewportUV` (float2, index 0), `PixelPosition` (float2, index 1) |
-| `MaterialExpressionTextureSample` | `RGB`, `R`, `G`, `B`, `A`, `RGBA` |
-| `MaterialExpressionWorldPosition` | (single output, omit name) |
-| `MaterialExpressionViewSize` | (single output float2, omit name) |
-
-Example — ScreenPosition with named output:
-```
-N_4kVm2xRp8bNw3yLq9dJs MaterialExpressionScreenPosition
-  > ViewportUV -> N_7tHn5cWs1fPx6zMr0gKu.A
-```
-
-### Common Input Pin Names
-
-| Node Type | Input Pins |
-|-----------|-----------|
-| Single-input nodes (`Sine`, `Cosine`, `Tangent`, `Abs`, `OneMinus`, `Frac`, `Floor`, `Ceil`, `Saturate`, `SquareRoot`, `Length`, `Normalize`) | `Input` (can be omitted) |
-| `ComponentMask` | `Input` (can be omitted) |
-| Binary math (`Multiply`, `Add`, `Subtract`, `Divide`) | `A`, `B` |
-| `Power` | `Base`, `Exponent` |
-| `DotProduct`, `CrossProduct`, `Distance` | `A`, `B` |
-| `AppendVector` | `A`, `B` |
-| `LinearInterpolate` | `A`, `B`, `Alpha` |
-| `Clamp` | `Input`, `Min`, `Max` |
-| `If` | `A`, `B`, `AGreaterThanB`, `AEqualsB`, `ALessThanB` |
-| `Arctangent2Fast` | `Y`, `X` |
-
-### Graph Outputs
-
-Material output pins are expressed as `[PinName]`:
-
-```
-  > RGB -> [BaseColor]
-  > -> [Roughness]
-  > -> [Normal]
-  > -> [EmissiveColor]
-  > -> [Opacity]
-  > -> [OpacityMask]
-  > -> [Metallic]
-  > -> [WorldPositionOffset]
-```
-
-### Common Expression Classes
-
-**Source-only nodes** (no inputs — must always have `> ->` output lines or they will be deleted as orphans):
-
-| ClassName | Output | Description |
-|-----------|--------|-------------|
-| `MaterialExpressionConstant` | float1 | Float constant (property: `R`) |
-| `MaterialExpressionConstant2Vector` | float2 | Vector2 constant |
-| `MaterialExpressionConstant3Vector` | float3 | Vector3 constant (property: `Constant:(R=,G=,B=,A=)`) |
-| `MaterialExpressionConstant4Vector` | float4 | Vector4 constant |
-| `MaterialExpressionScalarParameter` | float1 | Float parameter |
-| `MaterialExpressionVectorParameter` | float3 | Vector parameter |
-| `MaterialExpressionTexCoord` | float2 | Texture coordinates |
-| `MaterialExpressionTime` | float1 | Time value |
-| `MaterialExpressionScreenPosition` | float2 × 2 | Outputs: `ViewportUV`, `PixelPosition` |
-| `MaterialExpressionViewSize` | float2 | Viewport resolution in pixels |
-| `MaterialExpressionWorldPosition` | float3 | World position |
-| `MaterialExpressionVertexColor` | float4 | Vertex color (outputs: R, G, B, A, RGB) |
-| `MaterialExpressionCameraPositionWS` | float3 | Camera position |
-| `MaterialExpressionTextureObject` | Texture | Texture reference |
-
-**Texture sampling:**
-
-| ClassName | Description |
-|-----------|-------------|
-| `MaterialExpressionTextureSample` | Sample a texture (outputs: RGB, R, G, B, A, RGBA) |
-| `MaterialExpressionTextureSampleParameter2D` | Texture parameter |
-
-**Math — binary:**
-
-| ClassName | Inputs | Unconnected-default properties | Description |
-|-----------|--------|-------------------------------|-------------|
-| `MaterialExpressionMultiply` | `A`, `B` | `ConstA`, `ConstB` (float) | A * B |
-| `MaterialExpressionAdd` | `A`, `B` | `ConstA`, `ConstB` (float) | A + B |
-| `MaterialExpressionSubtract` | `A`, `B` | `ConstA`, `ConstB` (float) | A - B |
-| `MaterialExpressionDivide` | `A`, `B` | `ConstA`, `ConstB` (float) | A / B |
-| `MaterialExpressionPower` | `Base`, `Exponent` | `ConstExponent` (float) | Base ^ Exponent |
-| `MaterialExpressionDotProduct` | `A`, `B` | *(none)* | Dot(A, B) → float1 |
-| `MaterialExpressionCrossProduct` | `A`, `B` | *(none)* | Cross(A, B) → float3 |
-| `MaterialExpressionDistance` | `A`, `B` | *(none)* | Distance(A, B) → float1 |
-| `MaterialExpressionAppendVector` | `A`, `B` | *(none — both inputs required)* | Append(A, B) — concatenates dimensions. **Max output is float4.** float1+float1→float2, float2+float2→float4. float3+float2 or larger **FAILS**. |
-
-`ConstA`/`ConstB` are **only available on the four basic arithmetic nodes** (Multiply, Add, Subtract, Divide). They provide a scalar fallback when the corresponding input pin is unconnected. All other binary nodes require explicit input connections — use a `MaterialExpressionConstant` node to supply fixed values.
-
-**Math — unary** (input: `Input`, can be omitted in connection):
-
-| ClassName | Description |
-|-----------|-------------|
-| `MaterialExpressionOneMinus` | 1 - X |
-| `MaterialExpressionAbs` | Absolute value |
-| `MaterialExpressionNormalize` | Normalize → same dimension |
-| `MaterialExpressionLength` | Length → float1 |
-| `MaterialExpressionSquareRoot` | sqrt |
-| `MaterialExpressionFrac` | Fractional part |
-| `MaterialExpressionFloor` | Floor |
-| `MaterialExpressionCeil` | Ceiling |
-| `MaterialExpressionSaturate` | Clamp to 0-1 |
-
-**Trig** (input: `Input`; `Period` property: default 1 maps input range [0,1] to one full cycle. **WARNING: `Period:0` is BROKEN** — it injects a float4 multiply that corrupts dimensions. For raw radians use `Period:6.283185` (= 2π), which maps [0, 2π] to one full cycle):
-
-| ClassName | Description |
-|-----------|-------------|
-| `MaterialExpressionSine` | sin |
-| `MaterialExpressionCosine` | cos |
-| `MaterialExpressionTangent` | tan |
-| `MaterialExpressionArctangent2Fast` | atan2(Y, X) — inputs: `Y`, `X` |
-
-**Interpolation & logic:**
-
-| ClassName | Description |
-|-----------|-------------|
-| `MaterialExpressionLinearInterpolate` | Lerp(A, B, Alpha) |
-| `MaterialExpressionClamp` | Clamp(Input, Min, Max) |
-| `MaterialExpressionIf` | If(A, B, AGreaterThanB, AEqualsB, ALessThanB) |
-| `MaterialExpressionStaticSwitchParameter` | Static bool parameter |
-
-**Channel operations:**
-
-| ClassName | Description |
-|-----------|-------------|
-| `MaterialExpressionComponentMask` | Mask channels (properties: R, G, B, A booleans) |
-
-**Other:**
-
-| ClassName | Description |
-|-----------|-------------|
-| `MaterialExpressionPanner` | UV panning |
-| `MaterialExpressionTransform` | Transform vector between spaces |
-| `MaterialExpressionCustom` | Custom HLSL code |
-| `MaterialExpressionMaterialFunctionCall` | Call a material function |
-| `MaterialExpressionSetMaterialAttributes` | Set material attributes |
-
-## Custom HLSL
-
-For `MaterialExpressionCustom`, the `Code` property contains HLSL and `InputNames` defines custom inputs:
-
-```
-N_new0 MaterialExpressionCustom {Code:"float3 result = Input1 * Input2;\nreturn result;", OutputType:CMOT_Float3, InputNames:["A","B"]}
-```
-
-### Defining Functions via Struct Wrapping
-
-UE's Custom node **does support function definitions** — wrap them inside a `struct`. Direct top-level function definitions (`float Foo(){...}`) are rejected by the compiler, but struct member functions work:
-
-```hlsl
-struct MyHelpers
-{
-    float Hash(float t)
-    {
-        return frac(sin(t * 613.2) * 614.8);
-    }
-
-    float2 Hash2D(float t)
-    {
-        return float2(
-            frac(sin(t * 213.3) * 314.8) - 0.5,
-            frac(sin(t * 591.1) * 647.2) - 0.5
-        );
-    }
-
-    float3 Compute(float2 uv, float time)
-    {
-        float h = Hash(time);
-        float2 offset = Hash2D(time);
-        return float3(uv + offset, h);
-    }
-} Helpers;              // <-- instance name after closing brace
-
-return Helpers.Compute(UV, Time);   // call via instance
-```
-
-**Key rules:**
-1. Define a `struct` with all helper functions as member methods.
-2. **Declare an instance** immediately after the closing brace: `} InstanceName;`
-3. Call functions via the instance: `InstanceName.FunctionName(args)`.
-4. Struct methods can call other methods in the same struct freely.
-5. Multiple structs are allowed — each must have its own instance name.
-6. **Prefer struct functions over `#define` macros** — they support proper scoping, recursion-free multi-line logic, and the compiler gives better error messages.
-
-## Material Instances
-
-Material instance parameter editing uses `SetObjectProperty` from the `unreal-object-operation` skill, not NodeCode. NodeCode is for editing the **parent material's** node graph.
+1. **Literal Value** (`SetModuleInputValue`) — stored as Rapid Iteration Parameter in `Constants.EmitterName.ModuleName.InputName`, no graph nodes
+2. **Binding** (`SetModuleInputBinding`) — ParameterMapGet reads another parameter (e.g. `User.MyParam`, `Emitter.SpawnRate`)
+3. **Dynamic Input** (`SetModuleInputDynamicInput`) — a DynamicInput script computes the value
+4. **Data Interface** — a NiagaraNodeInput provides a data interface object
+5. **Default** — module's built-in default, no override
 
 ## Workflow
 
-1. **Outline** — see what sections exist
-2. **ReadGraph("Properties")** — check current material settings
-3. **ReadGraph("Material")** — get the full node graph
-4. **Modify** — edit properties and/or nodes
-5. **WriteGraph("Properties", text)** — update settings
-6. **WriteGraph("Material", text)** — update graph (auto-recompiles)
+### Exploring a System
 
-## Key Rules
+```json
+// 1. Get system structure
+{"object":"...NodeCodeEditingLibrary","function":"Outline","params":{"AssetPath":"/Game/FX/NS_Fountain"}}
 
-1. **Preserve node IDs** — existing nodes have `N_<base62>` IDs that encode their GUID. Always keep them unchanged when writing back. Use `N_new<int>` only for genuinely new nodes.
-2. **`[Material]` is the complete main graph** — no per-output-pin splitting.
-3. **ReadGraph before WriteGraph** — always read first.
-4. All operations support **Undo** (Ctrl+Z).
-5. **Incremental diff** — only changed nodes/connections are modified.
-6. **Every node needs output connections** — nodes without `> ->` lines that aren't reachable from material outputs will be deleted as orphans. This is especially important for source-only nodes (constants, Time, ScreenPosition, ViewSize, etc.).
-7. **Connections are output-side only** — you declare where a node's output goes by writing `> ->` lines under it. There is no way to declare an incoming connection on the target side.
-8. **Track dimensions through the graph** — UE material nodes have strict type rules. Binary math nodes broadcast (`float1 op floatN → floatN`). `AppendVector` concatenates dimensions with a **max of float4**. `ComponentMask` reduces dimensions. `DotProduct` and `Length` always output float1. When building complex graphs, mentally track the dimension at each node to avoid overflow at `AppendVector`. See the **Dimension Rules** section below.
-9. **Verify all node IDs before writing** — every `N_<id>` referenced in `> ->` connection lines must be defined as a node line in the same graph. Referencing an undefined ID will silently drop that connection.
-10. **Pin name rule** — single-input nodes (`Sine`, `Cosine`, `Abs`, `Saturate`, `OneMinus`, `ComponentMask`, `Length`, etc.) use `Input` as their pin name or omit it entirely. NEVER use `.A` or `.B` for single-input nodes — those names only exist on binary nodes (`Multiply`, `Add`, `DotProduct`, etc.).
+// 2. Read emitter list
+{"object":"...NodeCodeEditingLibrary","function":"ReadGraph","params":{"AssetPath":"/Game/FX/NS_Fountain","Section":"Emitters"}}
 
-## Dimension Rules
+// 3. Deep-dive into an emitter (use ObjectPath from step 2)
+{"object":"...NodeCodeEditingLibrary","function":"Outline","params":{"AssetPath":"/Game/FX/NS_Fountain.NS_Fountain:Fountain"}}
+```
 
-UE material compiler enforces strict dimension rules. Track the float-width through your node chain:
+### Modifying Module Stack
 
-| Operation | Output dimension |
-|-----------|-----------------|
-| `Multiply/Add/Subtract/Divide(floatN, floatN)` | floatN |
-| `Multiply/Add/Subtract/Divide(float1, floatN)` | floatN (broadcast) |
-| `AppendVector(floatA, floatB)` | float(A+B), **max float4** |
-| `ComponentMask` with K channels enabled | floatK |
-| `DotProduct(floatN, floatN)` | float1 |
-| `CrossProduct(float3, float3)` | float3 |
-| `Length(floatN)` | float1 |
-| `Distance(floatN, floatN)` | float1 |
-| `Normalize(floatN)` | floatN |
-| `Sine/Cosine/Tangent(floatN)` | floatN |
-| `Abs/OneMinus/Saturate/Frac/Floor/Ceil(floatN)` | floatN |
-| `Arctangent2Fast(float1, float1)` | float1 |
+```json
+// Add a module
+{"object":"...NiagaraOperationLibrary","function":"AddModule","params":{"EmitterPath":"...Fountain","ScriptUsage":"ParticleSpawn","ModuleAssetPath":"/Niagara/Modules/AddVelocity","Index":1}}
 
-Common pitfall: passing a float2 through `Multiply(float2, float2)` still yields float2, but then `AppendVector(float2, float2)` yields float4. Another `AppendVector` with that float4 will **fail to compile**.
+// Set module input to a value
+{"object":"...NiagaraOperationLibrary","function":"SetModuleInputValue","params":{"EmitterPath":"...Fountain","ScriptUsage":"ParticleSpawn","ModuleGuid":"...","InputName":"Velocity","Value":"(X=0,Y=0,Z=100)"}}
 
-## Error Handling
+// Bind module input to User parameter
+{"object":"...NiagaraOperationLibrary","function":"SetModuleInputBinding","params":{"EmitterPath":"...Fountain","ScriptUsage":"ParticleSpawn","ModuleGuid":"...","InputName":"Velocity","LinkedParamName":"User.InitialVelocity"}}
+```
 
-- Check `diff` object in response for changes applied.
-- Unknown expression class: `"Unknown expression class: ..."`.
-- Pin not found: `"Input 'X' not found on N_... (ClassName). Available: [...]"`.
+### Editing a Module Script's Internal Graph
+
+```
+ReadGraph("/Game/FX/Modules/MyModule", "Module")
+→ Text representation of the node graph
+
+WriteGraph("/Game/FX/Modules/MyModule", "Module", <modified text>)
+→ Diff result
+```
+
+### Modifying Renderer Properties
+
+```json
+// Get renderer list
+{"object":"...NodeCodeEditingLibrary","function":"ReadGraph","params":{"AssetPath":"...Fountain","Section":"Renderers"}}
+
+// Read detailed renderer properties via reflection
+{"object":"...ObjectOperationLibrary","function":"DescribeObject","params":{"ObjectPath":"...SpriteRenderer_0"}}
+
+// Set renderer property
+{"object":"...ObjectOperationLibrary","function":"SetObjectProperty","params":{"ObjectPath":"...SpriteRenderer_0","PropertyName":"Material","JsonValue":"\"/Game/Materials/M_Particle\""}}
+```
+
+## Node Types in Graph Sections
+
+| Encoded Name | UClass | Description |
+|-------------|--------|-------------|
+| `FunctionCall:<ScriptPath>` | UNiagaraNodeFunctionCall | Module/function call (asset module) |
+| `FunctionCall:ScratchPad:<Name>` | UNiagaraNodeFunctionCall | ScratchPad (Local Module) reference |
+| `Assignment` | UNiagaraNodeAssignment | Inline assignment |
+| `CustomHlsl` | UNiagaraNodeCustomHlsl | Custom HLSL code |
+| `ParameterMapGet` | UNiagaraNodeParameterMapGet | Read from parameter map |
+| `ParameterMapSet` | UNiagaraNodeParameterMapSet | Write to parameter map |
+| `NiagaraOp` | UNiagaraNodeOp | Math operation (OpName property) |
+| `NiagaraNodeInput` | UNiagaraNodeInput | Input node |
+| `NiagaraNodeOutput` | UNiagaraNodeOutput | Output node |
+
+### Working with ScratchPad (Local Module) Scripts
+
+ScratchPad scripts are inline module/function/dynamic-input scripts embedded within a System or Emitter. They appear in `[ScratchPadScripts]` and are referenced in graphs as `FunctionCall:ScratchPad:<Name>`.
+
+```json
+// 1. Read ScratchPad list from source system
+{"object":"...NodeCodeEditingLibrary","function":"ReadGraph","params":{"AssetPath":"/Game/FX/NS_Source","Section":"ScratchPadScripts"}}
+
+// 2. Create matching ScratchPad scripts in target system
+{"object":"...NiagaraOperationLibrary","function":"CreateScratchPadScript","params":{"SystemOrEmitter":"/Game/FX/NS_Target","ScriptName":"MyModule","Usage":"Module","ModuleUsageBitmask":56}}
+
+// 3. Read source ScratchPad internal graph (use ObjectPath from step 1)
+{"object":"...NodeCodeEditingLibrary","function":"ReadGraph","params":{"AssetPath":"/Game/FX/NS_Source.NS_Source:MyModule","Section":"Module"}}
+
+// 4. Write to target ScratchPad (use ObjectPath from step 2)
+{"object":"...NodeCodeEditingLibrary","function":"WriteGraph","params":{"AssetPath":"/Game/FX/NS_Target.NS_Target:MyModule","Section":"Module","GraphText":"..."}}
+
+// 5. Now write stage graphs — FunctionCall:ScratchPad:MyModule auto-resolves to target system's script
+```
+
+## Important Notes
+
+- **GUID Preservation**: When editing graphs with WriteGraph, preserve existing node `#guid` values to ensure correct diff matching.
+- **Emitters are embedded**: Emitters inside a System are copies, not references. Access them via ObjectPath from the `[Emitters]` section.
+- **ParticleAttributes are read-only**: They are derived from compiled scripts. To add/remove particle attributes, add/remove modules that write to `Particles.` namespace.
+- **Prefer OperationLibrary for module stack changes**: Use AddModule/RemoveModule/SetModuleInput instead of WriteGraph for System/Emitter stage graphs, as these APIs correctly handle Rapid Iteration parameters and Override node management.
