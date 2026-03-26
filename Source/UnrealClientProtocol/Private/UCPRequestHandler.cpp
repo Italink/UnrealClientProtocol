@@ -4,6 +4,7 @@
 #include "UCPFunctionInvoker.h"
 #include "UCPSettings.h"
 #include "UObject/UObjectGlobals.h"
+#include "UObject/GarbageCollection.h"
 #include "Dom/JsonValue.h"
 #include "Misc/OutputDeviceRedirector.h"
 #include "Misc/Guid.h"
@@ -146,6 +147,7 @@ TSharedPtr<FJsonObject> FUCPRequestHandler::HandleRequest(const TSharedPtr<FJson
 	BeginLogCapture(RequestLogLevel);
 
 	TSharedPtr<FJsonObject> Response;
+	FGCScopeGuard GCGuard;
 #if WITH_EDITOR
 	{
 		FScopedTransaction Transaction(FText::FromString(RequestId));
