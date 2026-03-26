@@ -1,10 +1,11 @@
 """
 CLI tool for communicating with the UnrealClientProtocol TCP plugin.
 
-Accepts a single JSON command from stdin.
+Accepts a single JSON command via command-line argument or stdin.
 Connects to the UE editor via TCP (4-byte LE length-prefixed framing).
 
 Usage:
+    python UCP.py '<json>'
     echo <json> | python UCP.py
 
 Environment:
@@ -77,7 +78,7 @@ def execute(command: dict) -> str:
 
 
 def main():
-    raw = sys.stdin.read()
+    raw = sys.argv[1] if len(sys.argv) > 1 else sys.stdin.read()
 
     try:
         data = json.loads(raw)
