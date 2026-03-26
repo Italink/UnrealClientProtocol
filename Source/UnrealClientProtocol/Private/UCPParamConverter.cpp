@@ -154,6 +154,48 @@ TSharedPtr<FJsonValue> FUCPParamConverter::PropertyToJsonValue(
 		return MakeShared<FJsonValueString>(TEXT("<delegate:unsupported>"));
 	}
 
+	if (FArrayProperty* ArrayProp = CastField<FArrayProperty>(Property))
+	{
+		FScriptArrayHelper ArrayHelper(ArrayProp, ValuePtr);
+		TArray<TSharedPtr<FJsonValue>> JsonArray;
+		JsonArray.Reserve(ArrayHelper.Num());
+		for (int32 i = 0; i < ArrayHelper.Num(); ++i)
+		{
+			const void* ElemPtr = ArrayHelper.GetRawPtr(i);
+			JsonArray.Add(PropertyToJsonValue(ArrayProp->Inner, ElemPtr));
+		}
+		return MakeShared<FJsonValueArray>(JsonArray);
+	}
+
+	if (FMapProperty* MapProp = CastField<FMapProperty>(Property))
+	{
+		FScriptMapHelper MapHelper(MapProp, ValuePtr);
+		TSharedPtr<FJsonObject> MapJson = MakeShared<FJsonObject>();
+		for (int32 i = 0; i < MapHelper.Num(); ++i)
+		{
+			if (!MapHelper.IsValidIndex(i)) continue;
+			const void* KeyPtr = MapHelper.GetKeyPtr(i);
+			const void* ValPtr = MapHelper.GetValuePtr(i);
+			FString KeyStr;
+			MapProp->KeyProp->ExportTextItem_Direct(KeyStr, KeyPtr, nullptr, nullptr, PPF_None);
+			MapJson->SetField(KeyStr, PropertyToJsonValue(MapProp->ValueProp, ValPtr));
+		}
+		return MakeShared<FJsonValueObject>(MapJson);
+	}
+
+	if (FSetProperty* SetProp = CastField<FSetProperty>(Property))
+	{
+		FScriptSetHelper SetHelper(SetProp, ValuePtr);
+		TArray<TSharedPtr<FJsonValue>> JsonArray;
+		for (int32 i = 0; i < SetHelper.Num(); ++i)
+		{
+			if (!SetHelper.IsValidIndex(i)) continue;
+			const void* ElemPtr = SetHelper.GetElementPtr(i);
+			JsonArray.Add(PropertyToJsonValue(SetProp->ElementProp, ElemPtr));
+		}
+		return MakeShared<FJsonValueArray>(JsonArray);
+	}
+
 	return FJsonObjectConverter::UPropertyToJsonValue(Property, ValuePtr);
 }
 
@@ -236,6 +278,72 @@ FString FUCPParamConverter::JsonValueToProperty(
 	if (CastField<FDelegateProperty>(Property) || CastField<FMulticastDelegateProperty>(Property))
 	{
 		return TEXT("Delegate parameters are not supported");
+	}
+
+	if (FArrayProperty* ArrayProp = CastField<FArrayProperty>(Property))
+	{
+		const TArray<TSharedPtr<FJsonValue>>* JsonArray;
+		if (!JsonVal->TryGetArray(JsonArray))
+		{
+			return TEXT("Expected JSON array");
+		}
+		FScriptArrayHelper ArrayHelper(ArrayProp, ValuePtr);
+		ArrayHelper.Resize(JsonArray->Num());
+		for (int32 i = 0; i < JsonArray->Num(); ++i)
+		{
+			FString Error = JsonValueToProperty((*JsonArray)[i], ArrayProp->Inner, ArrayHelper.GetRawPtr(i));
+			if (!Error.IsEmpty())
+			{
+				return FString::Printf(TEXT("[%d]: %s"), i, *Error);
+			}
+		}
+		return FString();
+	}
+
+	if (FMapProperty* MapProp = CastField<FMapProperty>(Property))
+	{
+		const TSharedPtr<FJsonObject>* JsonObject;
+		if (!JsonVal->TryGetObject(JsonObject))
+		{
+			return TEXT("Expected JSON object for TMap");
+		}
+		FScriptMapHelper MapHelper(MapProp, ValuePtr);
+		MapHelper.EmptyValues();
+		for (const auto& Pair : (*JsonObject)->Values)
+		{
+			int32 NewIndex = MapHelper.AddDefaultValue_Invalid_NeedsRehash();
+			uint8* KeyPtr = MapHelper.GetKeyPtr(NewIndex);
+			MapProp->KeyProp->ImportText_Direct(*Pair.Key, KeyPtr, nullptr, PPF_None);
+			FString Error = JsonValueToProperty(Pair.Value, MapProp->ValueProp, MapHelper.GetValuePtr(NewIndex));
+			if (!Error.IsEmpty())
+			{
+				return FString::Printf(TEXT("[key=%s]: %s"), *Pair.Key, *Error);
+			}
+		}
+		MapHelper.Rehash();
+		return FString();
+	}
+
+	if (FSetProperty* SetProp = CastField<FSetProperty>(Property))
+	{
+		const TArray<TSharedPtr<FJsonValue>>* JsonArray;
+		if (!JsonVal->TryGetArray(JsonArray))
+		{
+			return TEXT("Expected JSON array for TSet");
+		}
+		FScriptSetHelper SetHelper(SetProp, ValuePtr);
+		SetHelper.EmptyElements();
+		for (int32 i = 0; i < JsonArray->Num(); ++i)
+		{
+			int32 NewIndex = SetHelper.AddDefaultValue_Invalid_NeedsRehash();
+			FString Error = JsonValueToProperty((*JsonArray)[i], SetProp->ElementProp, SetHelper.GetElementPtr(NewIndex));
+			if (!Error.IsEmpty())
+			{
+				return FString::Printf(TEXT("[%d]: %s"), i, *Error);
+			}
+		}
+		SetHelper.Rehash();
+		return FString();
 	}
 
 	if (!FJsonObjectConverter::JsonValueToUProperty(JsonVal, Property, ValuePtr))
