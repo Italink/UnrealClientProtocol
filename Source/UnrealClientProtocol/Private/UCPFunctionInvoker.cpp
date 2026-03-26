@@ -2,6 +2,7 @@
 
 #include "UCPFunctionInvoker.h"
 #include "UCPParamConverter.h"
+#include "UCPDeferredResponse.h"
 #include "UObject/UObjectGlobals.h"
 #include "UObject/UnrealType.h"
 #include "UObject/Class.h"
@@ -12,7 +13,9 @@
 TSharedPtr<FJsonObject> FUCPFunctionInvoker::Invoke(
 	const FString& ObjectPath,
 	const FString& FunctionName,
-	const TSharedPtr<FJsonObject>& ParamsJson)
+	const TSharedPtr<FJsonObject>& ParamsJson,
+	uint32 ConnectionId,
+	const FString& RequestId)
 {
 	FString Error;
 
@@ -70,7 +73,31 @@ TSharedPtr<FJsonObject> FUCPFunctionInvoker::Invoke(
 		}
 	}
 
-	Obj->ProcessEvent(Func, ParamBuffer);
+	{
+		FUCPCallScope Scope(ConnectionId, RequestId);
+		Obj->ProcessEvent(Func, ParamBuffer);
+	}
+
+	if (ParamBuffer)
+	{
+		FProperty* ReturnProp = Func->GetReturnProperty();
+		if (ReturnProp)
+		{
+			FStructProperty* StructProp = CastField<FStructProperty>(ReturnProp);
+			if (StructProp && StructProp->Struct == FUCPDeferredResponse::StaticStruct())
+			{
+				FUCPDeferredResponse* DeferredPtr = StructProp->ContainerPtrToValuePtr<FUCPDeferredResponse>(ParamBuffer);
+				if (DeferredPtr->IsDeferred())
+				{
+					for (TFieldIterator<FProperty> It(Func); It && It->HasAnyPropertyFlags(CPF_Parm); ++It)
+					{
+						It->DestroyValue_InContainer(ParamBuffer);
+					}
+					return nullptr;
+				}
+			}
+		}
+	}
 
 	TSharedPtr<FJsonObject> ResultJson;
 	if (ParamBuffer)

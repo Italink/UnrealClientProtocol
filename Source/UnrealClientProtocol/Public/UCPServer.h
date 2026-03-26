@@ -32,7 +32,7 @@ struct FUCPResponse
 	TSharedPtr<FJsonObject> Json;
 };
 
-class FUCPServer
+class UNREALCLIENTPROTOCOL_API FUCPServer
 {
 public:
 	explicit FUCPServer(int32 InPort);
@@ -42,7 +42,11 @@ public:
 	void Stop();
 	void Tick();
 
+	static FUCPServer* Get();
+	void EnqueueDeferredResponse(uint32 ConnectionId, TSharedPtr<FJsonObject> Json);
+
 private:
+	static FUCPServer* Instance;
 	bool OnConnectionAccepted(FSocket* InSocket, const FIPv4Endpoint& InEndpoint);
 
 	void PollConnections();

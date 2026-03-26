@@ -11,7 +11,9 @@ public:
 	static TSharedPtr<FJsonObject> Invoke(
 		const FString& ObjectPath,
 		const FString& FunctionName,
-		const TSharedPtr<FJsonObject>& ParamsJson);
+		const TSharedPtr<FJsonObject>& ParamsJson,
+		uint32 ConnectionId = 0,
+		const FString& RequestId = FString());
 
 	static TSharedPtr<FJsonObject> DescribeObject(const FString& ObjectPath);
 

@@ -133,7 +133,7 @@ void FUCPRequestHandler::EndLogCapture(TSharedPtr<FJsonObject>& Response)
 
 // ---- Request Handling ----
 
-TSharedPtr<FJsonObject> FUCPRequestHandler::HandleRequest(const TSharedPtr<FJsonObject>& Request)
+TSharedPtr<FJsonObject> FUCPRequestHandler::HandleRequest(const TSharedPtr<FJsonObject>& Request, uint32 ConnectionId)
 {
 	if (!Request.IsValid())
 	{
@@ -149,11 +149,17 @@ TSharedPtr<FJsonObject> FUCPRequestHandler::HandleRequest(const TSharedPtr<FJson
 #if WITH_EDITOR
 	{
 		FScopedTransaction Transaction(FText::FromString(RequestId));
-		Response = CallUFunction(Request);
+		Response = CallUFunction(Request, ConnectionId, RequestId);
 	}
 #else
-	Response = CallUFunction(Request);
+	Response = CallUFunction(Request, ConnectionId, RequestId);
 #endif
+
+	if (!Response.IsValid())
+	{
+		EndLogCapture(Response);
+		return nullptr;
+	}
 
 	Response->SetStringField(TEXT("id"), RequestId);
 	EndLogCapture(Response);
@@ -161,7 +167,7 @@ TSharedPtr<FJsonObject> FUCPRequestHandler::HandleRequest(const TSharedPtr<FJson
 	return Response;
 }
 
-TSharedPtr<FJsonObject> FUCPRequestHandler::CallUFunction(const TSharedPtr<FJsonObject>& Request)
+TSharedPtr<FJsonObject> FUCPRequestHandler::CallUFunction(const TSharedPtr<FJsonObject>& Request, uint32 ConnectionId, const FString& RequestId)
 {
 	FString ObjectPath = Request->GetStringField(TEXT("object"));
 	FString FunctionName = Request->GetStringField(TEXT("function"));
@@ -185,7 +191,12 @@ TSharedPtr<FJsonObject> FUCPRequestHandler::CallUFunction(const TSharedPtr<FJson
 		return MakeError(FString(), FString::Printf(TEXT("Call denied by security policy: %s::%s"), *ObjectPath, *FunctionName));
 	}
 
-	TSharedPtr<FJsonObject> Result = FUCPFunctionInvoker::Invoke(ObjectPath, FunctionName, Params);
+	TSharedPtr<FJsonObject> Result = FUCPFunctionInvoker::Invoke(ObjectPath, FunctionName, Params, ConnectionId, RequestId);
+
+	if (!Result.IsValid())
+	{
+		return nullptr;
+	}
 
 	if (!Result->GetBoolField(TEXT("success")))
 	{

@@ -42,5 +42,10 @@ public class UnrealClientProtocolEditor : ModuleRules
 			"NiagaraEditor",
 			"RHI",
 		});
+
+		if (Target.Platform == UnrealTargetPlatform.Win64)
+		{
+			PrivateDependencyModuleNames.Add("LiveCoding");
+		}
 	}
 }

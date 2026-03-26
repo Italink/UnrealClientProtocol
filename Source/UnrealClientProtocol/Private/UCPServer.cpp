@@ -11,14 +11,34 @@
 
 static constexpr int32 MaxMessageSize = 16 * 1024 * 1024;
 
+FUCPServer* FUCPServer::Instance = nullptr;
+
+FUCPServer* FUCPServer::Get()
+{
+	return Instance;
+}
+
 FUCPServer::FUCPServer(int32 InPort)
 	: Port(InPort)
 {
+	Instance = this;
 }
 
 FUCPServer::~FUCPServer()
 {
 	Stop();
+	if (Instance == this)
+	{
+		Instance = nullptr;
+	}
+}
+
+void FUCPServer::EnqueueDeferredResponse(uint32 ConnectionId, TSharedPtr<FJsonObject> Json)
+{
+	FUCPResponse Resp;
+	Resp.ConnectionId = ConnectionId;
+	Resp.Json = Json;
+	PendingResponses.Enqueue(Resp);
 }
 
 bool FUCPServer::Start()
@@ -84,12 +104,15 @@ void FUCPServer::Tick()
 	FUCPRequest Req;
 	while (PendingRequests.Dequeue(Req))
 	{
-		TSharedPtr<FJsonObject> ResponseJson = RequestHandler->HandleRequest(Req.Json);
+		TSharedPtr<FJsonObject> ResponseJson = RequestHandler->HandleRequest(Req.Json, Req.ConnectionId);
 
-		FUCPResponse Resp;
-		Resp.ConnectionId = Req.ConnectionId;
-		Resp.Json = ResponseJson;
-		PendingResponses.Enqueue(Resp);
+		if (ResponseJson.IsValid())
+		{
+			FUCPResponse Resp;
+			Resp.ConnectionId = Req.ConnectionId;
+			Resp.Json = ResponseJson;
+			PendingResponses.Enqueue(Resp);
+		}
 	}
 
 	FlushResponses();

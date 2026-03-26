@@ -21,12 +21,12 @@ public:
 class UNREALCLIENTPROTOCOL_API FUCPRequestHandler
 {
 public:
-	TSharedPtr<FJsonObject> HandleRequest(const TSharedPtr<FJsonObject>& Request);
+	TSharedPtr<FJsonObject> HandleRequest(const TSharedPtr<FJsonObject>& Request, uint32 ConnectionId = 0);
 
 	static TSharedPtr<FJsonObject> MakeError(const FString& Id, const FString& Error);
 
 private:
-	TSharedPtr<FJsonObject> CallUFunction(const TSharedPtr<FJsonObject>& Request);
+	TSharedPtr<FJsonObject> CallUFunction(const TSharedPtr<FJsonObject>& Request, uint32 ConnectionId = 0, const FString& RequestId = FString());
 
 	void BeginLogCapture(ELogVerbosity::Type InMinVerbosity);
 	void EndLogCapture(TSharedPtr<FJsonObject>& Response);
