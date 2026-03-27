@@ -41,6 +41,14 @@ public class UnrealClientProtocolEditor : ModuleRules
 			"Niagara",
 			"NiagaraEditor",
 			"RHI",
+			"Slate",
+			"SlateCore",
+			"InputCore",
+			"AdvancedPreviewScene",
+			"EditorScriptingUtilities",
+			"ToolMenus",
+			"ImageCore",
+			"ImageWrapper",
 		});
 
 		if (Target.Platform == UnrealTargetPlatform.Win64)
