@@ -6,6 +6,9 @@
 #include "ILiveCodingModule.h"
 #endif
 
+#include "Containers/Ticker.h"
+#include "Misc/OutputDeviceRedirector.h"
+
 DEFINE_LOG_CATEGORY_STATIC(LogLiveCodingOp, Log, All);
 
 #if PLATFORM_WINDOWS
@@ -13,6 +16,35 @@ static ILiveCodingModule* GetLiveCodingModule()
 {
 	return FModuleManager::GetModulePtr<ILiveCodingModule>(LIVE_CODING_MODULE_NAME);
 }
+
+struct FLiveCodingLogCapture
+{
+	TArray<FString> Lines;
+	bool bHasErrors = false;
+}; 
+
+class FLiveCodingLogCaptureDevice : public FOutputDevice
+{
+public:
+	TSharedPtr<FLiveCodingLogCapture> Capture;
+
+	FLiveCodingLogCaptureDevice(TSharedPtr<FLiveCodingLogCapture> InCapture) : Capture(InCapture) {}
+
+	virtual void Serialize(const TCHAR* V, ELogVerbosity::Type Verbosity, const FName& Category) override
+	{
+		static const FName LogLiveCoding(TEXT("LogLiveCoding"));
+		static const FName LogLiveCodingModule(TEXT("LogLiveCodingModule"));
+
+		if (Category == LogLiveCoding || Category == LogLiveCodingModule)
+		{
+			Capture->Lines.Add(FString::Printf(TEXT("[%s] %s"), *Category.ToString(), V));
+			if (Verbosity == ELogVerbosity::Error || Verbosity == ELogVerbosity::Fatal)
+			{
+				Capture->bHasErrors = true;
+			}
+		}
+	}
+};
 #endif
 
 FUCPDeferredResponse ULiveCodingOperationLibrary::Compile()
@@ -50,21 +82,44 @@ FUCPDeferredResponse ULiveCodingOperationLibrary::Compile()
 
 	if (Deferred.IsDeferred())
 	{
-		FUCPDeferredResponse Captured = Deferred;
-		FDelegateHandle Handle;
-		Handle = LC->GetOnPatchCompleteDelegate().AddLambda([Captured, Handle]() mutable
-		{
-			auto Result = MakeShared<FJsonObject>();
-			Result->SetStringField(TEXT("status"), TEXT("success"));
-			Captured.Complete(Result);
+		auto LogData = MakeShared<FLiveCodingLogCapture>();
+		auto* Device = new FLiveCodingLogCaptureDevice(LogData);
+		FOutputDeviceRedirector::Get()->AddOutputDevice(Device);
 
-			ILiveCodingModule* LCInner = GetLiveCodingModule();
-			if (LCInner)
-			{
-				LCInner->GetOnPatchCompleteDelegate().Remove(Handle);
-			}
-		});
+		FUCPDeferredResponse Captured = Deferred;
+
 		LC->Compile();
+
+		FTSTicker::GetCoreTicker().AddTicker(
+			FTickerDelegate::CreateLambda([Captured, LogData, Device](float) mutable -> bool
+		{
+			ILiveCodingModule* LCInner = GetLiveCodingModule();
+			if (LCInner && LCInner->IsCompiling())
+			{
+				return true;
+			}
+
+			FOutputDeviceRedirector::Get()->RemoveOutputDevice(Device);
+			delete Device;
+
+			auto Result = MakeShared<FJsonObject>();
+			if (LogData->bHasErrors)
+			{
+				Result->SetStringField(TEXT("status"), TEXT("failure"));
+				TArray<TSharedPtr<FJsonValue>> LogArray;
+				for (const FString& Line : LogData->Lines)
+				{
+					LogArray.Add(MakeShared<FJsonValueString>(Line));
+				}
+				Result->SetArrayField(TEXT("log"), LogArray);
+			}
+			else
+			{
+				Result->SetStringField(TEXT("status"), TEXT("success"));
+			}
+			Captured.Complete(Result);
+			return false;
+		}), 0.5f);
 	}
 	else
 	{
