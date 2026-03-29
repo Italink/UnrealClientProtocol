@@ -49,6 +49,14 @@ public class UnrealClientProtocolEditor : ModuleRules
 			"ToolMenus",
 			"ImageCore",
 			"ImageWrapper",
+
+			"GeometryScriptingCore",
+			"GeometryScriptingEditor",
+			"GeometryFramework",
+			"DynamicMesh",
+			"MeshDescription",
+			"StaticMeshDescription",
+			"StaticMeshEditor",
 		});
 
 		if (Target.Platform == UnrealTargetPlatform.Win64)

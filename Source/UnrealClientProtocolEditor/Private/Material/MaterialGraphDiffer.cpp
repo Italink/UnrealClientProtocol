@@ -697,8 +697,11 @@ FNodeCodeDiffResult FMaterialGraphDiffer::DiffAndApply(
 		}
 		UMaterialEditingLibrary::RecompileMaterial(Material);
 		GShaderCompilingManager->FinishAllCompilation();
-
+#if ENGINE_MINOR_VERSION >= 7
 		const FMaterialResource* MatResource = Material->GetMaterialResource(GMaxRHIShaderPlatform);
+#else
+		const FMaterialResource* MatResource = Material->GetMaterialResource(GMaxRHIFeatureLevel);
+#endif
 		if (MatResource)
 		{
 			const TArray<FString>& CompileErrors = MatResource->GetCompileErrors();
