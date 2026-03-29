@@ -1,0 +1,55 @@
+---
+description: "Skill selection strategy and taxonomy for UCP skills. Guides which skills to load and in what order."
+alwaysApply: true
+---
+
+# UCP Skill Taxonomy
+
+When selecting skills, follow this hierarchy. Always read parent before child.
+
+## Layer: transport
+- unreal-client-protocol — UCP TCP/JSON communication layer, prerequisite for all others
+
+## Layer: foundation
+- unreal-object-operation — UObject property read/write, metadata, undo/redo
+- unreal-asset-operation — Asset search, dependencies, CRUD, editor operations
+- unreal-actor-editing — Actor spawn/delete/duplicate/move/select
+
+## Layer: convention
+- unreal-nodecode-common — Shared NodeCode graph-editing rules (read before any graph-editing skill)
+
+## Layer: domain
+
+### Graph Editing (parent: unreal-nodecode-common)
+- unreal-material-editing — Material expression node graphs
+- unreal-blueprint-editing — Blueprint node graphs, functions, events
+- unreal-niagara-editing — Niagara VFX systems, emitters, modules
+- unreal-widget-editing — UMG Widget Blueprint UI layouts
+
+### Modeling (parent: unreal-modeling)
+- unreal-modeling — GeometryScript entry point (read first, then sub-skills as needed)
+  - unreal-modeling-primitives — Box, Sphere, Cylinder, sweep, revolve
+  - unreal-modeling-meshops — Boolean, simplify, remesh, repair, subdivide
+  - unreal-modeling-uv — UV projection, layout, transform
+  - unreal-modeling-normals — Normals, tangents, flip, split
+  - unreal-modeling-deform — Bend, twist, smooth, displace, transform
+  - unreal-modeling-query — Bounding box, raycast, containment, sampling
+  - unreal-modeling-selection — Select by sphere/box/plane/normal/material
+  - unreal-modeling-attributes — Vertex color, polygroup, material ID
+  - unreal-modeling-asset — Asset load/save, collision generation
+  - unreal-modeling-create — Mesh generation and creation
+
+## Layer: composite
+- unreal-large-blueprint-analysis — Systematic large Blueprint analysis and C++ translation
+- unreal-live-coding — Live Coding runtime C++ recompilation
+- unreal-pie-control — Play In Editor / Simulate In Editor control
+
+## Layer: workflow
+- unreal-plugin-localization — Plugin UI text translation workflow
+
+## Selection Rules
+1. Determine the LAYER needed from user intent
+2. Within domain, determine SUB-DOMAIN (graph-editing vs modeling)
+3. Always load transport skill knowledge first if unsure about UCP calling convention
+4. For graph editing: load convention skill (unreal-nodecode-common) before domain skill
+5. For modeling: load unreal-modeling before any modeling sub-skill

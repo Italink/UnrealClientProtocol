@@ -1,0 +1,47 @@
+---
+description: "Improve, fix, update, or create UCP agent skills. Use when user reports skill failures, requests skill changes, wants to create new skills, or asks to evolve the skill system."
+alwaysApply: false
+---
+
+# Skill Evolution Protocol
+
+When the user asks to improve a skill, or when you detect repeated failures with a skill, follow this protocol.
+
+## Analysis Phase
+
+1. Read the target skill's SKILL.md — pay attention to its `metadata` (version, layer, parent) and the `## Known Issues` / `## Changelog` sections at the bottom
+2. If available, read `.cursor/hooks/state/session-log.jsonl` for usage and failure data related to this skill
+3. Identify the root cause: missing instruction? wrong example? outdated API? incomplete coverage?
+
+## Proposal Phase
+
+4. Draft the specific changes as a diff
+5. Explain the rationale to the user
+6. Wait for user approval before making changes
+
+## Execution Phase
+
+7. Edit the SKILL.md in `Plugins/UnrealClientProtocol/Agent/skills/<name>/`
+8. Increment `metadata.version` — patch (x.x.+1) for fixes, minor (x.+1.0) for new capabilities
+9. Update `metadata.updated` to today's date
+10. Prepend the new version entry to `## Changelog`
+11. If the issue is not yet fully resolved, add it to `## Known Issues`
+12. Run `Agent/scripts/sync-agent.ps1` to propagate changes to `.cursor/skills/` and `.cursor/rules/`
+
+## New Skill Discovery
+
+If analysis reveals a capability gap (user needed something no existing skill covers):
+
+1. Check if it fits an existing skill (extend it) or genuinely needs a new one
+2. For new skills: determine the correct `layer` and `parent` from the taxonomy (see skill-taxonomy.mdc)
+3. Generate SKILL.md with proper metadata fields (name, description, metadata with version/layer/parent/tags/updated)
+4. Include `## Changelog` and `## Known Issues` sections
+5. Add the new skill to the taxonomy rule (`Agent/rules/skill-taxonomy.mdc`)
+6. Run sync script to deploy
+
+## Recording Known Issues
+
+When a skill works but has a known limitation or edge case:
+
+1. Add a concise entry to the skill's `## Known Issues` section with the date
+2. This serves as cross-session memory — next time the skill is loaded, the agent sees the issue automatically
