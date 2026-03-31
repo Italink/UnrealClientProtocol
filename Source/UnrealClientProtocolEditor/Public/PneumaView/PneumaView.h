@@ -8,6 +8,7 @@
 
 class FPneumaViewEditor;
 class UPneumaViewConfig;
+class FAdvancedPreviewScene;
 
 USTRUCT(BlueprintType)
 struct FPneumaCameraPose
@@ -45,14 +46,56 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "UCP|PneumaView")
 	FString GetPreviewWorld();
 
+	// --- Preview scene actor management ---
+
+	UFUNCTION(BlueprintCallable, Category = "UCP|PneumaView")
+	AActor* SpawnPreviewMeshActor(UStaticMesh* Mesh,
+		FVector Location = FVector::ZeroVector,
+		FRotator Rotation = FRotator::ZeroRotator,
+		FVector Scale = FVector(1.0,1.0,1.0));
+
+	UFUNCTION(BlueprintCallable, Category = "UCP|PneumaView")
+	bool DestroyPreviewActor(AActor* Actor);
+
+	UFUNCTION(BlueprintCallable, Category = "UCP|PneumaView")
+	bool SetActorMaterial(AActor* Actor, UMaterialInterface* Material);
+
+	UFUNCTION(BlueprintCallable, Category = "UCP|PneumaView")
+	bool SetActorStaticMesh(AActor* Actor, UStaticMesh* Mesh);
+
+	UFUNCTION(BlueprintCallable, Category = "UCP|PneumaView")
+	void FocusOnActor(AActor* Actor);
+
+	UFUNCTION(BlueprintCallable, Category = "UCP|PneumaView")
+	void FocusOnAll();
+
+	// --- GC protection ---
+
+	void AddManagedObject(UObject* Object);
+	void RemoveManagedObject(UObject* Object);
+
 	UPROPERTY(BlueprintReadOnly, Category = "UCP|PneumaView")
 	FString UniqueName;
 
-private:
+	TSharedPtr<FPneumaViewEditor> GetEditor() const { return Editor; }
+	UPneumaViewConfig* GetConfig() const { return Config; }
+
+protected:
 	static TMap<FString, TObjectPtr<UPneumaView>> Instances;
 
+	UWorld* GetPreviewWorldPtr() const;
+	TSharedPtr<FAdvancedPreviewScene> GetPreviewScenePtr() const;
+
+	void InitFromConfig(const FString& InUniqueName, UPneumaViewConfig* InConfig);
+
 	TSharedPtr<FPneumaViewEditor> Editor;
+
+	UPROPERTY()
 	TObjectPtr<UPneumaViewConfig> Config;
 
-	void OnEditorClosed();
+	UPROPERTY()
+	TArray<TObjectPtr<UObject>> ManagedObjects;
+
+	virtual void OnEditorClosed();
+	void CleanupManagedObjects();
 };

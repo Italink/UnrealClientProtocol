@@ -9,6 +9,7 @@
 #include "Editor.h"
 #include "ToolMenus.h"
 #include "ViewportToolbar/UnrealEdViewportToolbar.h"
+#include "Widgets/SOverlay.h"
 
 #define LOCTEXT_NAMESPACE "SPneumaViewViewport"
 
@@ -30,6 +31,8 @@ void SPneumaViewViewport::Construct(const FArguments& InArgs)
 {
 	PneumaViewEditorPtr = InArgs._PneumaViewEditor;
 	InteractionMode = InArgs._InteractionMode;
+	bShowGrid = InArgs._bShowGrid;
+	bShowFloor = InArgs._bShowFloor;
 
 	UWorld* World = PreviewScene->GetWorld();
 	if (World != nullptr)
@@ -40,6 +43,39 @@ void SPneumaViewViewport::Construct(const FArguments& InArgs)
 	SEditorViewport::Construct(SEditorViewport::FArguments());
 
 	UE::AdvancedPreviewScene::BindDefaultOnSettingsChangedHandler(PreviewScene, EditorViewportClient);
+
+	PreviewScene->SetFloorVisibility(bShowFloor);
+}
+
+void SPneumaViewViewport::SetOverlay(TSharedPtr<SWidget> InOverlay)
+{
+	OverlayWidget = InOverlay;
+	if (OverlayWidget.IsValid() && ViewportOverlay.IsValid())
+	{
+		ViewportOverlay->AddSlot()
+		.HAlign(HAlign_Right)
+		.VAlign(VAlign_Top)
+		.Padding(4.0f, 32.0f, 4.0f, 4.0f)
+		[
+			OverlayWidget.ToSharedRef()
+		];
+	}
+}
+
+void SPneumaViewViewport::PopulateViewportOverlays(TSharedRef<SOverlay> Overlay)
+{
+	SEditorViewport::PopulateViewportOverlays(Overlay);
+
+	if (OverlayWidget.IsValid())
+	{
+		Overlay->AddSlot()
+		.HAlign(HAlign_Right)
+		.VAlign(VAlign_Top)
+		.Padding(4.0f, 32.0f, 4.0f, 4.0f)
+		[
+			OverlayWidget.ToSharedRef()
+		];
+	}
 }
 
 TSharedRef<SEditorViewport> SPneumaViewViewport::GetViewportWidget()
@@ -59,7 +95,7 @@ void SPneumaViewViewport::OnFloatingButtonClicked()
 TSharedRef<FEditorViewportClient> SPneumaViewViewport::MakeEditorViewportClient()
 {
 	EditorViewportClient = MakeShareable(
-		new FPneumaViewViewportClient(SharedThis(this), PreviewScene.ToSharedRef(), InteractionMode));
+		new FPneumaViewViewportClient(SharedThis(this), PreviewScene.ToSharedRef(), InteractionMode, bShowGrid));
 
 	EditorViewportClient->bSetListenerPosition = false;
 	EditorViewportClient->SetRealtime(true);

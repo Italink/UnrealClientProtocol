@@ -57,11 +57,15 @@ public class UnrealClientProtocolEditor : ModuleRules
 			"MeshDescription",
 			"StaticMeshDescription",
 			"StaticMeshEditor",
+
+			"GeometryCore",
+			"MeshConversion",
 		});
 
 		if (Target.Platform == UnrealTargetPlatform.Win64)
 		{
 			PrivateDependencyModuleNames.Add("LiveCoding");
+			AddEngineThirdPartyPrivateStaticDependencies(Target, "IntelTBB", "OpenVDB");
 		}
 	}
 }

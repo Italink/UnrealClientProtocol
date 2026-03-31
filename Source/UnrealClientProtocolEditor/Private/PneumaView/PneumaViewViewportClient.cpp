@@ -11,14 +11,15 @@
 FPneumaViewViewportClient::FPneumaViewViewportClient(
 	const TSharedRef<SPneumaViewViewport>& InViewport,
 	const TSharedRef<FAdvancedPreviewScene>& InPreviewScene,
-	EPneumaViewInteractionMode InInteractionMode)
+	EPneumaViewInteractionMode InInteractionMode,
+	bool bInShowGrid)
 	: FEditorViewportClient(nullptr, &InPreviewScene.Get(), StaticCastSharedRef<SEditorViewport>(InViewport))
 	, InteractionMode(InInteractionMode)
 {
 	DrawHelper.bDrawPivot = false;
 	DrawHelper.bDrawWorldBox = false;
 	DrawHelper.bDrawKillZ = false;
-	DrawHelper.bDrawGrid = true;
+	DrawHelper.bDrawGrid = bInShowGrid;
 	DrawHelper.GridColorAxis = FColor(160, 160, 160);
 	DrawHelper.GridColorMajor = FColor(144, 144, 144);
 	DrawHelper.GridColorMinor = FColor(128, 128, 128);

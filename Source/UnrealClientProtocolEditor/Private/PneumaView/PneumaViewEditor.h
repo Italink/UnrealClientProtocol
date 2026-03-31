@@ -7,6 +7,7 @@
 #include "PneumaView/PneumaViewConfig.h"
 
 class SPneumaViewViewport;
+class UPneumaView;
 
 DECLARE_DELEGATE(FOnPneumaViewEditorClosed);
 
@@ -17,7 +18,8 @@ public:
 	static const FName PreviewSceneSettingsTabId;
 
 	void InitPneumaViewEditor(const TSharedPtr<IToolkitHost>& InitToolkitHost,
-		UPneumaViewConfig* InConfig);
+		UPneumaViewConfig* InConfig,
+		TWeakObjectPtr<UPneumaView> InOwnerView = nullptr);
 
 	virtual ~FPneumaViewEditor() override;
 
@@ -38,8 +40,11 @@ public:
 private:
 	TSharedRef<SDockTab> SpawnTab_Viewport(const FSpawnTabArgs& Args);
 	TSharedRef<SDockTab> SpawnTab_PreviewSceneSettings(const FSpawnTabArgs& Args);
+	TSharedRef<SDockTab> SpawnTab_Additional(const FSpawnTabArgs& Args, FName TabId);
 
 	TSharedPtr<SPneumaViewViewport> Viewport;
 	TSharedPtr<SWidget> AdvancedPreviewSettingsWidget;
 	TObjectPtr<UPneumaViewConfig> Config;
+	TWeakObjectPtr<UPneumaView> OwnerView;
+	TArray<FPneumaViewTabInfo> AdditionalTabs;
 };

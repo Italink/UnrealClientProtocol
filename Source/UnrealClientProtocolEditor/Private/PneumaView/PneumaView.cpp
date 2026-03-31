@@ -10,6 +10,9 @@
 #include "Engine/TextureRenderTarget2D.h"
 #include "Components/SceneCaptureComponent2D.h"
 #include "Engine/SceneCapture2D.h"
+#include "Engine/StaticMesh.h"
+#include "Engine/StaticMeshActor.h"
+#include "Components/StaticMeshComponent.h"
 #include "ImageUtils.h"
 #include "AdvancedPreviewScene.h"
 #include "Misc/Paths.h"
@@ -91,19 +94,24 @@ UPneumaView* UPneumaView::FindOrCreate(const FString& InUniqueName, const FStrin
 	ConfigInstance->DisplayName = InUniqueName;
 
 	UPneumaView* NewView = NewObject<UPneumaView>(GetTransientPackage(), NAME_None, RF_Transient);
-	NewView->AddToRoot();
-	NewView->UniqueName = InUniqueName;
-	NewView->Config = ConfigInstance;
-
-	TSharedRef<FPneumaViewEditor> NewEditor = MakeShared<FPneumaViewEditor>();
-	NewView->Editor = NewEditor;
-
-	NewEditor->OnEditorClosed.BindUObject(NewView, &UPneumaView::OnEditorClosed);
-	NewEditor->InitPneumaViewEditor(nullptr, ConfigInstance);
-
-	Instances.Add(InUniqueName, NewView);
+	NewView->InitFromConfig(InUniqueName, ConfigInstance);
 
 	return NewView;
+}
+
+void UPneumaView::InitFromConfig(const FString& InUniqueName, UPneumaViewConfig* InConfig)
+{
+	AddToRoot();
+	UniqueName = InUniqueName;
+	Config = InConfig;
+
+	TSharedRef<FPneumaViewEditor> NewEditor = MakeShared<FPneumaViewEditor>();
+	Editor = NewEditor;
+
+	NewEditor->OnEditorClosed.BindUObject(this, &UPneumaView::OnEditorClosed);
+	NewEditor->InitPneumaViewEditor(nullptr, InConfig, this);
+
+	Instances.Add(InUniqueName, this);
 }
 
 bool UPneumaView::Close()
@@ -112,6 +120,8 @@ bool UPneumaView::Close()
 	{
 		return false;
 	}
+
+	CleanupManagedObjects();
 
 	if (Editor.IsValid())
 	{
@@ -128,10 +138,56 @@ bool UPneumaView::Close()
 
 void UPneumaView::OnEditorClosed()
 {
+	CleanupManagedObjects();
 	Editor.Reset();
 	Instances.Remove(UniqueName);
 	RemoveFromRoot();
 }
+
+void UPneumaView::CleanupManagedObjects()
+{
+	for (int32 i = ManagedObjects.Num() - 1; i >= 0; --i)
+	{
+		UObject* Obj = ManagedObjects[i];
+		if (AActor* Actor = Cast<AActor>(Obj))
+		{
+			if (IsValid(Actor))
+			{
+				Actor->Destroy();
+			}
+		}
+	}
+	ManagedObjects.Empty();
+}
+
+void UPneumaView::AddManagedObject(UObject* Object)
+{
+	if (Object && !ManagedObjects.Contains(Object))
+	{
+		ManagedObjects.Add(Object);
+	}
+}
+
+void UPneumaView::RemoveManagedObject(UObject* Object)
+{
+	ManagedObjects.Remove(Object);
+}
+
+UWorld* UPneumaView::GetPreviewWorldPtr() const
+{
+	TSharedPtr<FAdvancedPreviewScene> Scene = GetPreviewScenePtr();
+	return Scene.IsValid() ? Scene->GetWorld() : nullptr;
+}
+
+TSharedPtr<FAdvancedPreviewScene> UPneumaView::GetPreviewScenePtr() const
+{
+	if (!Editor.IsValid()) return nullptr;
+	TSharedPtr<SPneumaViewViewport> Viewport = Editor->GetViewport();
+	if (!Viewport.IsValid()) return nullptr;
+	return Viewport->GetPreviewScene();
+}
+
+// --- View Mode ---
 
 bool UPneumaView::SetViewMode(const FString& ModeName)
 {
@@ -146,7 +202,7 @@ bool UPneumaView::SetViewMode(const FString& ModeName)
 	const EViewModeIndex* Found = PneumaViewPrivate::ViewModeMap.Find(ModeName);
 	if (!Found)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("PneumaView: Unknown ViewMode '%s'. Valid: Lit, Unlit, Wireframe, BrushWireframe, DetailLighting, LightingOnly, LightComplexity, ShaderComplexity, LightmapDensity, Reflections, CollisionPawn, CollisionVisibility, PathTracing, RayTracingDebug, LitWireframe"), *ModeName);
+		UE_LOG(LogTemp, Warning, TEXT("PneumaView: Unknown ViewMode '%s'."), *ModeName);
 		return false;
 	}
 
@@ -166,6 +222,8 @@ FString UPneumaView::GetViewMode()
 
 	return PneumaViewPrivate::ViewModeToString(Client->GetViewMode());
 }
+
+// --- Capture ---
 
 TArray<FString> UPneumaView::CaptureViewport(const TArray<FPneumaCameraPose>& CameraPoses, const FString& CaptureConfigType)
 {
@@ -282,24 +340,116 @@ TArray<FString> UPneumaView::CaptureViewport(const TArray<FPneumaCameraPose>& Ca
 
 FString UPneumaView::GetPreviewWorld()
 {
-	if (!Editor.IsValid())
+	UWorld* World = GetPreviewWorldPtr();
+	return World ? World->GetPathName() : FString();
+}
+
+// --- Preview Scene Actor Management ---
+
+AActor* UPneumaView::SpawnPreviewMeshActor(UStaticMesh* Mesh, FVector Location, FRotator Rotation, FVector Scale)
+{
+	if (!Mesh) return nullptr;
+
+	UWorld* World = GetPreviewWorldPtr();
+	if (!World) return nullptr;
+
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	SpawnParams.ObjectFlags = RF_Transient;
+
+	AStaticMeshActor* Actor = World->SpawnActor<AStaticMeshActor>(Location, Rotation, SpawnParams);
+	if (!Actor) return nullptr;
+	Actor->SetActorScale3D(Scale);
+	Actor->GetStaticMeshComponent()->SetStaticMesh(Mesh);
+	Actor->SetMobility(EComponentMobility::Movable);
+
+	AddManagedObject(Actor);
+	return Actor;
+}
+
+bool UPneumaView::DestroyPreviewActor(AActor* Actor)
+{
+	if (!Actor) return false;
+
+	RemoveManagedObject(Actor);
+	Actor->Destroy();
+	return true;
+}
+
+bool UPneumaView::SetActorMaterial(AActor* Actor, UMaterialInterface* Material)
+{
+	if (!Actor || !Material) return false;
+
+	AStaticMeshActor* SMActor = Cast<AStaticMeshActor>(Actor);
+	if (!SMActor) return false;
+
+	UStaticMeshComponent* Comp = SMActor->GetStaticMeshComponent();
+	if (!Comp) return false;
+
+	for (int32 i = 0; i < Comp->GetNumMaterials(); ++i)
 	{
-		return FString();
+		Comp->SetMaterial(i, Material);
 	}
+	return true;
+}
+
+bool UPneumaView::SetActorStaticMesh(AActor* Actor, UStaticMesh* Mesh)
+{
+	if (!Actor || !Mesh) return false;
+
+	AStaticMeshActor* SMActor = Cast<AStaticMeshActor>(Actor);
+	if (!SMActor) return false;
+
+	UStaticMeshComponent* Comp = SMActor->GetStaticMeshComponent();
+	if (!Comp) return false;
+
+	Comp->SetStaticMesh(Mesh);
+	return true;
+}
+
+void UPneumaView::FocusOnActor(AActor* Actor)
+{
+	if (!Actor || !Editor.IsValid()) return;
 
 	TSharedPtr<SPneumaViewViewport> Viewport = Editor->GetViewport();
-	if (!Viewport.IsValid())
+	if (!Viewport.IsValid()) return;
+
+	FEditorViewportClient* Client = Viewport->GetViewportClient();
+	if (!Client) return;
+
+	FBox ActorBounds = Actor->GetComponentsBoundingBox(true);
+	if (ActorBounds.IsValid)
 	{
-		return FString();
+		FVector Center = ActorBounds.GetCenter();
+		float Radius = (float)ActorBounds.GetExtent().GetMax() * 2.0f;
+		Client->FocusViewportOnBox(ActorBounds, true);
+	}
+}
+
+void UPneumaView::FocusOnAll()
+{
+	if (!Editor.IsValid()) return;
+
+	TSharedPtr<SPneumaViewViewport> Viewport = Editor->GetViewport();
+	if (!Viewport.IsValid()) return;
+
+	FEditorViewportClient* Client = Viewport->GetViewportClient();
+	if (!Client) return;
+
+	FBox CombinedBounds(ForceInit);
+	for (UObject* Obj : ManagedObjects)
+	{
+		AActor* Actor = Cast<AActor>(Obj);
+		if (Actor && IsValid(Actor))
+		{
+			CombinedBounds += Actor->GetComponentsBoundingBox(true);
+		}
 	}
 
-	UWorld* World = Viewport->GetPreviewScene()->GetWorld();
-	if (!World)
+	if (CombinedBounds.IsValid)
 	{
-		return FString();
+		Client->FocusViewportOnBox(CombinedBounds, true);
 	}
-
-	return World->GetPathName();
 }
 
 #undef LOCTEXT_NAMESPACE

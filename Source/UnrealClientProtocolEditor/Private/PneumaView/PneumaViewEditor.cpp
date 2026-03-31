@@ -2,6 +2,7 @@
 
 #include "PneumaViewEditor.h"
 #include "PneumaViewViewport.h"
+#include "PneumaView/PneumaView.h"
 
 #include "AdvancedPreviewSceneModule.h"
 #include "Widgets/Docking/SDockTab.h"
@@ -17,12 +18,28 @@ const FName FPneumaViewEditor::PreviewSceneSettingsTabId(TEXT("PneumaViewEditor_
 
 void FPneumaViewEditor::InitPneumaViewEditor(
 	const TSharedPtr<IToolkitHost>& InitToolkitHost,
-	UPneumaViewConfig* InConfig)
+	UPneumaViewConfig* InConfig,
+	TWeakObjectPtr<UPneumaView> InOwnerView)
 {
 	Config = InConfig;
+	OwnerView = InOwnerView;
+
+	if (Config)
+	{
+		AdditionalTabs = Config->GetAdditionalTabs();
+	}
+
+	auto RightPanel = FTabManager::NewStack()
+		->SetSizeCoefficient(0.3f)
+		->AddTab(PreviewSceneSettingsTabId, ETabState::OpenedTab);
+
+	for (const FPneumaViewTabInfo& TabInfo : AdditionalTabs)
+	{
+		RightPanel->AddTab(TabInfo.TabId, ETabState::OpenedTab);
+	}
 
 	const TSharedRef<FTabManager::FLayout> StandaloneDefaultLayout =
-		FTabManager::NewLayout("Standalone_PneumaViewEditor_Layout_v1")
+		FTabManager::NewLayout("Standalone_PneumaViewEditor_Layout_v2")
 		->AddArea
 		(
 			FTabManager::NewPrimaryArea()->SetOrientation(Orient_Vertical)
@@ -36,12 +53,7 @@ void FPneumaViewEditor::InitPneumaViewEditor(
 					->AddTab(ViewportTabId, ETabState::OpenedTab)
 					->SetHideTabWell(true)
 				)
-				->Split
-				(
-					FTabManager::NewStack()
-					->SetSizeCoefficient(0.3f)
-					->AddTab(PreviewSceneSettingsTabId, ETabState::OpenedTab)
-				)
+				->Split(RightPanel)
 			)
 		);
 
@@ -87,6 +99,16 @@ void FPneumaViewEditor::RegisterTabSpawners(const TSharedRef<FTabManager>& InTab
 		.SetDisplayName(LOCTEXT("PreviewSceneTab", "Preview Scene Settings"))
 		.SetGroup(WorkspaceMenuCategoryRef)
 		.SetIcon(FSlateIcon(FAppStyle::GetAppStyleSetName(), "LevelEditor.Tabs.Details"));
+
+	for (const FPneumaViewTabInfo& TabInfo : AdditionalTabs)
+	{
+		InTabManager->RegisterTabSpawner(TabInfo.TabId,
+				FOnSpawnTab::CreateSP(this, &FPneumaViewEditor::SpawnTab_Additional, TabInfo.TabId))
+			.SetDisplayName(TabInfo.DisplayName)
+			.SetGroup(WorkspaceMenuCategoryRef)
+			.SetIcon(FSlateIcon(FAppStyle::GetAppStyleSetName(),
+				TabInfo.IconStyleName.IsNone() ? FName("LevelEditor.Tabs.Details") : TabInfo.IconStyleName));
+	}
 }
 
 void FPneumaViewEditor::UnregisterTabSpawners(const TSharedRef<FTabManager>& InTabManager)
@@ -95,6 +117,11 @@ void FPneumaViewEditor::UnregisterTabSpawners(const TSharedRef<FTabManager>& InT
 
 	InTabManager->UnregisterTabSpawner(ViewportTabId);
 	InTabManager->UnregisterTabSpawner(PreviewSceneSettingsTabId);
+
+	for (const FPneumaViewTabInfo& TabInfo : AdditionalTabs)
+	{
+		InTabManager->UnregisterTabSpawner(TabInfo.TabId);
+	}
 }
 
 TSharedRef<SDockTab> FPneumaViewEditor::SpawnTab_Viewport(const FSpawnTabArgs& Args)
@@ -104,7 +131,19 @@ TSharedRef<SDockTab> FPneumaViewEditor::SpawnTab_Viewport(const FSpawnTabArgs& A
 
 	Viewport = SNew(SPneumaViewViewport)
 		.InteractionMode(Config ? Config->InteractionMode : EPneumaViewInteractionMode::Orbit)
+		.bShowGrid(Config ? Config->bShowGrid : true)
+		.bShowFloor(Config ? Config->bShowFloor : true)
 		.PneumaViewEditor(StaticCastSharedRef<FPneumaViewEditor>(AsShared()));
+
+	if (Config)
+	{
+		TSharedPtr<SWidget> Overlay = Config->CreateViewportOverlay(
+			Viewport->GetPreviewScene(), OwnerView);
+		if (Overlay.IsValid())
+		{
+			Viewport->SetOverlay(Overlay);
+		}
+	}
 
 	DockTab->SetContent(Viewport.ToSharedRef());
 	return DockTab;
@@ -127,6 +166,22 @@ TSharedRef<SDockTab> FPneumaViewEditor::SpawnTab_PreviewSceneSettings(const FSpa
 	if (AdvancedPreviewSettingsWidget.IsValid())
 	{
 		DockTab->SetContent(AdvancedPreviewSettingsWidget.ToSharedRef());
+	}
+	else
+	{
+		DockTab->SetContent(SNullWidget::NullWidget);
+	}
+
+	return DockTab;
+}
+
+TSharedRef<SDockTab> FPneumaViewEditor::SpawnTab_Additional(const FSpawnTabArgs& Args, FName TabId)
+{
+	TSharedRef<SDockTab> DockTab = SNew(SDockTab);
+
+	if (Config && Viewport.IsValid())
+	{
+		DockTab->SetContent(Config->CreateTabWidget(TabId, Viewport->GetPreviewScene(), OwnerView));
 	}
 	else
 	{

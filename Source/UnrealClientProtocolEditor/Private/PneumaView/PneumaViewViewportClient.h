@@ -14,7 +14,8 @@ class FPneumaViewViewportClient : public FEditorViewportClient, public TSharedFr
 public:
 	FPneumaViewViewportClient(const TSharedRef<SPneumaViewViewport>& InViewport,
 		const TSharedRef<FAdvancedPreviewScene>& InPreviewScene,
-		EPneumaViewInteractionMode InInteractionMode);
+		EPneumaViewInteractionMode InInteractionMode,
+		bool bInShowGrid = true);
 
 	virtual bool ShouldOrbitCamera() const override;
 

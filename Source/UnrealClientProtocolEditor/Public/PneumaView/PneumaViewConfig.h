@@ -7,11 +7,25 @@
 #include "Components/SceneCaptureComponent2D.h"
 #include "PneumaViewConfig.generated.h"
 
+class UPneumaView;
+class FAdvancedPreviewScene;
+
 UENUM(BlueprintType)
 enum class EPneumaViewInteractionMode : uint8
 {
 	Orbit       UMETA(DisplayName = "Orbit"),
 	FreeCamera  UMETA(DisplayName = "Free Camera"),
+};
+
+USTRUCT()
+struct FPneumaViewTabInfo
+{
+	GENERATED_BODY()
+
+	FName TabId;
+	FText DisplayName;
+	FName IconStyleName;
+	float SizeCoefficient = 0.3f;
 };
 
 UCLASS(BlueprintType, Abstract)
@@ -34,6 +48,17 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PneumaView")
 	bool bShowGrid = true;
+
+	virtual TArray<FPneumaViewTabInfo> GetAdditionalTabs() const { return {}; }
+
+	virtual TSharedRef<SWidget> CreateTabWidget(
+		const FName& TabId,
+		TSharedRef<FAdvancedPreviewScene> PreviewScene,
+		TWeakObjectPtr<UPneumaView> OwnerView);
+
+	virtual TSharedPtr<SWidget> CreateViewportOverlay(
+		TSharedRef<FAdvancedPreviewScene> PreviewScene,
+		TWeakObjectPtr<UPneumaView> OwnerView) { return nullptr; }
 };
 
 UCLASS(BlueprintType)
