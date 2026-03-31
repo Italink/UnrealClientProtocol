@@ -4,11 +4,11 @@ description: >-
   通过 UCP 查询和管理 UE 资产。当用户要求搜索资产、查看依赖/引用、资产增删改查、获取选中/当前资产、
   打开/关闭资产编辑器或任何编辑器资产操作时使用。
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
   layer: foundation
   parent: unreal-client-protocol
   tags: "asset registry search crud editor"
-  updated: "2026-03-29"
+  updated: "2026-03-31"
 ---
 
 # 资产操作
@@ -28,6 +28,9 @@ metadata:
 | `GetAssetRegistry` | （无） | `IAssetRegistry` 对象 | 返回 AssetRegistry 实例，可直接通过 UCP `call` 调用其函数。 |
 | `ForceDeleteAssets` | `AssetPaths`（字符串数组） | `int32` — 删除数量 | 强制删除资产（忽略引用）。封装 `ObjectTools::ForceDeleteObjects`。 |
 | `FixupReferencers` | `AssetPaths`（字符串数组） | `bool` | 清理重命名/合并后残留的重定向器。封装 `IAssetTools::FixupReferencers`。 |
+| `CreateBlueprint` | `AssetName`, `PackagePath`, `ParentClassPath`, `BlueprintType`（默认 `"Normal"`） | `UBlueprint*` | 创建蓝图资产。BlueprintType: `Normal`/`Const`/`MacroLibrary`/`Interface`/`FunctionLibrary`。 |
+| `CompileBlueprint` | `BlueprintPath` | `bool` | 编译指定蓝图。 |
+| `CanCreateBlueprintOfClass` | `ClassPath` | `bool` | 检查指定类能否作为蓝图父类。 |
 
 #### 获取 AssetRegistry
 
@@ -55,6 +58,30 @@ metadata:
 
 ```json
 {"object":"/Script/UnrealClientProtocolEditor.Default__AssetEditorOperationLibrary","function":"FixupReferencers","params":{"AssetPaths":["/Game/Materials/M_OldName"]}}
+```
+
+#### 创建蓝图
+
+```json
+{"object":"/Script/UnrealClientProtocolEditor.Default__AssetEditorOperationLibrary","function":"CreateBlueprint","params":{"AssetName":"BP_MyActor","PackagePath":"/Game/Blueprints","ParentClassPath":"/Script/Engine.Actor"}}
+```
+
+创建函数库蓝图：
+
+```json
+{"object":"/Script/UnrealClientProtocolEditor.Default__AssetEditorOperationLibrary","function":"CreateBlueprint","params":{"AssetName":"BFL_Utils","PackagePath":"/Game/Blueprints","ParentClassPath":"/Script/Engine.Actor","BlueprintType":"FunctionLibrary"}}
+```
+
+#### 编译蓝图
+
+```json
+{"object":"/Script/UnrealClientProtocolEditor.Default__AssetEditorOperationLibrary","function":"CompileBlueprint","params":{"BlueprintPath":"/Game/Blueprints/BP_MyActor.BP_MyActor"}}
+```
+
+#### 检查类能否创建蓝图
+
+```json
+{"object":"/Script/UnrealClientProtocolEditor.Default__AssetEditorOperationLibrary","function":"CanCreateBlueprintOfClass","params":{"ClassPath":"/Script/Engine.Actor"}}
 ```
 
 ## 引擎内置资产库
@@ -122,15 +149,9 @@ metadata:
 | `SortByAssetName` | 按名称排序 FAssetData 数组 |
 | `SortByPredicate` | 按自定义谓词排序 FAssetData 数组 |
 
-### IAssetTools（通过 UAssetToolsHelpers::GetAssetTools()）
+### IAssetTools
 
-获取实例：
-
-```json
-{"object":"/Script/AssetTools.Default__AssetToolsHelpers","function":"GetAssetTools"}
-```
-
-然后在返回的实例上调用函数：
+**已知实例路径**：`/Script/AssetTools.Default__AssetToolsImpl`
 
 #### 创建
 
@@ -143,7 +164,7 @@ metadata:
 ##### 示例：创建新材质
 
 ```json
-{"object":"<asset_tools_instance>","function":"CreateAsset","params":{"AssetName":"M_NewMaterial","PackagePath":"/Game/Materials","AssetClass":"/Script/Engine.Material","Factory":null}}
+{"object":"/Script/AssetTools.Default__AssetToolsImpl","function":"CreateAsset","params":{"AssetName":"M_NewMaterial","PackagePath":"/Game/Materials","AssetClass":"/Script/Engine.Material","Factory":null}}
 ```
 
 #### 导入与导出
@@ -168,13 +189,13 @@ metadata:
 `RenameAssets` 接受 `FAssetRenameData` 结构体数组。每个结构体包含 `Asset`（要重命名的对象）、`NewPackagePath`（目标目录）和 `NewName`（新名称）：
 
 ```json
-{"object":"<asset_tools_instance>","function":"RenameAssets","params":{"AssetsAndNames":[{"Asset":"/Game/Materials/M_OldName.M_OldName","NewPackagePath":"/Game/Materials","NewName":"M_NewName"}]}}
+{"object":"/Script/AssetTools.Default__AssetToolsImpl","function":"RenameAssets","params":{"AssetsAndNames":[{"Asset":"/Game/Materials/M_OldName.M_OldName","NewPackagePath":"/Game/Materials","NewName":"M_NewName"}]}}
 ```
 
 ##### 示例：查找软引用
 
 ```json
-{"object":"<asset_tools_instance>","function":"FindSoftReferencesToObject","params":{"TargetObject":"/Game/Materials/M_Example.M_Example"}}
+{"object":"/Script/AssetTools.Default__AssetToolsImpl","function":"FindSoftReferencesToObject","params":{"TargetObject":"/Game/Materials/M_Example.M_Example"}}
 ```
 
 ### UEditorAssetLibrary
@@ -418,6 +439,7 @@ metadata:
 
 ## Changelog
 
+- 1.1.0 (2026-03-31): IAssetTools 使用已知实例路径；新增 CreateBlueprint/CompileBlueprint/CanCreateBlueprintOfClass
 - 1.0.0 (2026-03-29): Initial versioned release
 
 ## Known Issues
